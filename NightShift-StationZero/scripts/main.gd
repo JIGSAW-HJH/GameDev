@@ -1,5 +1,5 @@
 extends Control
-## NIGHT SHIFT: STATION ZERO — V0.5 audio / atmosphere on the balanced V0.4 baseline.
+## NIGHT SHIFT: STATION ZERO — V0.6 fullscreen menu, saves and controls on balanced V0.5 gameplay.
 ## Self-contained UI: no downloaded artwork, plugins, or fonts required.
 
 const SHIFT_SECONDS := 120.0
@@ -70,6 +70,7 @@ var breaker_labels: Array[Label] = []
 var breaker_buttons: Array[Button] = []
 var station_audio
 var audio_button: Button
+var game_menu: CanvasLayer
 
 func _ready() -> void:
     rng.randomize()
@@ -77,6 +78,9 @@ func _ready() -> void:
     station_audio.set_script(load("res://scripts/station_audio.gd"))
     add_child(station_audio)
     _build_ui()
+    game_menu = CanvasLayer.new()
+    game_menu.set_script(load("res://scripts/game_menu.gd"))
+    add_child(game_menu)
     _add_log("NIGHT SHIFT INITIALIZED. ALL SYSTEMS NOMINAL.")
     _add_log("SHIFT POWER TO MATCH CHANGING DEMAND.")
     _add_log("BATTERY LASTS LONGER; FREE REACTOR UNITS TO RECHARGE.")
@@ -84,7 +88,7 @@ func _ready() -> void:
     _refresh()
 
 func _process(delta: float) -> void:
-    if finished:
+    if finished or (game_menu != null and game_menu.is_blocking()):
         return
     remaining = maxf(0.0, remaining - delta)
     event_timer -= delta
@@ -131,26 +135,22 @@ func _process(delta: float) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
     if not event is InputEventKey or not event.pressed or event.echo:
         return
-    match event.keycode:
-        KEY_Q: _shift_power(0, 1)
-        KEY_A: _shift_power(0, -1)
-        KEY_W: _shift_power(1, 1)
-        KEY_S: _shift_power(1, -1)
-        KEY_E: _shift_power(2, 1)
-        KEY_D: _shift_power(2, -1)
-        KEY_B: _toggle_battery()
-        KEY_C: _acknowledge_alarm()
-        KEY_M: _toggle_audio()
-        KEY_1: _reset_breaker(0)
-        KEY_2: _reset_breaker(1)
-        KEY_3: _reset_breaker(2)
-        KEY_R: _reset()
-        KEY_ESCAPE: get_tree().quit()
-        KEY_F11:
-            if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_MAXIMIZED:
-                DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-            else:
-                DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
+    if game_menu == null or game_menu.is_blocking() or finished:
+        return
+    var action: String = game_menu.action_for_key(event.keycode)
+    match action:
+        "life_up": _shift_power(0, 1)
+        "life_down": _shift_power(0, -1)
+        "cool_up": _shift_power(1, 1)
+        "cool_down": _shift_power(1, -1)
+        "comms_up": _shift_power(2, 1)
+        "comms_down": _shift_power(2, -1)
+        "battery": _toggle_battery()
+        "ack": _acknowledge_alarm()
+        "breaker_1": _reset_breaker(0)
+        "breaker_2": _reset_breaker(1)
+        "breaker_3": _reset_breaker(2)
+        "mute": _toggle_audio()
 
 func _total_power() -> int:
     var result := 0
@@ -162,7 +162,7 @@ func _available_capacity() -> int:
     return reactor_output + (2 if battery_enabled and battery_charge > 0.0 else 0)
 
 func _shift_power(index: int, change: int) -> void:
-    if finished:
+    if finished or (game_menu != null and game_menu.is_blocking()):
         return
     var updated: int = power[index] + change
     if updated < 0 or updated > MAX_SYSTEM_POWER:
@@ -177,7 +177,7 @@ func _shift_power(index: int, change: int) -> void:
     _refresh()
 
 func _toggle_battery() -> void:
-    if finished:
+    if finished or (game_menu != null and game_menu.is_blocking()):
         return
     if not battery_enabled and battery_charge <= 0.0:
         _add_log("BATTERY IS EMPTY. REDUCE LOAD TO RECHARGE.")
@@ -214,7 +214,7 @@ func _trip_breaker(index: int) -> void:
     _add_log("FAULT: %s BREAKER TRIPPED. RESET WITH KEY %d AFTER COOLDOWN." % [SYSTEMS[index], index + 1])
 
 func _reset_breaker(index: int) -> void:
-    if finished:
+    if finished or (game_menu != null and game_menu.is_blocking()):
         return
     if not breakers_tripped[index]:
         _add_log("BREAKER %d IS ALREADY CLOSED." % (index + 1))
@@ -290,7 +290,7 @@ func _render_log() -> void:
         log_label.pop()
 
 func _acknowledge_alarm() -> void:
-    if finished:
+    if finished or (game_menu != null and game_menu.is_blocking()):
         return
     if alarm_signature == "":
         _add_log("ALARM ACKNOWLEDGEMENT: NOTHING ACTIVE.")
@@ -615,3 +615,66 @@ func _toggle_audio() -> void:
     var enabled_now: bool = station_audio.toggle_audio()
     audio_button.text = "SOUND ON [M]" if enabled_now else "SOUND OFF [M]"
     _add_log("AUDIO %s." % ("ENABLED" if enabled_now else "MUTED"))
+
+func get_save_data() -> Dictionary:
+    return {
+        "version": 1,
+        "remaining": remaining,
+        "event_timer": event_timer,
+        "reactor_output": reactor_output,
+        "sag_timer": sag_timer,
+        "battery_charge": battery_charge,
+        "battery_enabled": battery_enabled,
+        "event_count": event_count,
+        "power": power.duplicate(),
+        "demand": demand.duplicate(),
+        "integrity": integrity.duplicate(),
+        "breakers_tripped": breakers_tripped.duplicate(),
+        "breaker_cooldowns": breaker_cooldowns.duplicate(),
+        "log_lines": log_lines.duplicate(),
+        "alarm_acknowledged": alarm_acknowledged,
+        "alarm_signature": alarm_signature
+    }
+
+func load_save_data(data: Dictionary) -> bool:
+    if int(data.get("version", -1)) != 1:
+        return false
+    for name in ["power", "demand", "integrity", "breakers_tripped", "breaker_cooldowns", "log_lines"]:
+        if not data.has(name) or typeof(data[name]) != TYPE_ARRAY:
+            return false
+    for name in ["power", "demand", "integrity", "breakers_tripped", "breaker_cooldowns"]:
+        if data[name].size() != 3:
+            return false
+    remaining = clampf(float(data.get("remaining", SHIFT_SECONDS)), 0.1, SHIFT_SECONDS)
+    event_timer = clampf(float(data.get("event_timer", EVENT_INTERVAL)), 0.1, EVENT_INTERVAL)
+    reactor_output = clampi(int(data.get("reactor_output", REACTOR_NOMINAL)), 1, REACTOR_NOMINAL)
+    sag_timer = clampf(float(data.get("sag_timer", 0.0)), 0.0, REACTOR_SAG_SECONDS)
+    battery_charge = clampf(float(data.get("battery_charge", 100.0)), 0.0, 100.0)
+    battery_enabled = bool(data.get("battery_enabled", false)) and battery_charge > 0.0
+    event_count = maxi(0, int(data.get("event_count", 0)))
+    power.clear()
+    demand.clear()
+    integrity.clear()
+    breakers_tripped.clear()
+    breaker_cooldowns.clear()
+    for i in range(3):
+        power.append(clampi(int(data["power"][i]), 0, MAX_SYSTEM_POWER))
+        demand.append(clampi(int(data["demand"][i]), 0, MAX_SYSTEM_POWER))
+        integrity.append(clampf(float(data["integrity"][i]), 0.0, 100.0))
+        breakers_tripped.append(bool(data["breakers_tripped"][i]))
+        breaker_cooldowns.append(clampf(float(data["breaker_cooldowns"][i]), 0.0, BREAKER_RESET_DELAY))
+    log_lines.clear()
+    for entry in data["log_lines"]:
+        if log_lines.size() >= 6:
+            break
+        log_lines.append(str(entry).substr(0, 200))
+    alarm_acknowledged = bool(data.get("alarm_acknowledged", false))
+    alarm_signature = str(data.get("alarm_signature", ""))
+    finished = false
+    restart_button.visible = false
+    status_label.text = "ON DUTY"
+    status_label.add_theme_color_override("font_color", GREEN)
+    station_audio.set_alarm(false)
+    _render_log()
+    _refresh()
+    return true
