@@ -612,9 +612,11 @@ func _build_ui() -> void:
     footer.add_child(restart_button)
 
 func _toggle_audio() -> void:
-    var enabled_now: bool = station_audio.toggle_audio()
-    audio_button.text = "SOUND ON [M]" if enabled_now else "SOUND OFF [M]"
-    _add_log("AUDIO %s." % ("ENABLED" if enabled_now else "MUTED"))
+    game_menu.show_audio = not game_menu.show_audio
+    game_menu._apply_audio()
+    game_menu._save_settings()
+    audio_button.text = "SOUND ON [M]" if game_menu.show_audio else "SOUND OFF [M]"
+    _add_log("AUDIO %s." % ("ENABLED" if game_menu.show_audio else "MUTED"))
 
 func get_save_data() -> Dictionary:
     return {
