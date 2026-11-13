@@ -58,7 +58,7 @@ func _ready() -> void:
     panel.add_theme_stylebox_override("panel", style)
     center.add_child(panel)
     var scroller := ScrollContainer.new()
-    scroller.custom_minimum_size = Vector2(630.0, 0.0)
+    scroller.custom_minimum_size = Vector2(630.0, minf(680.0, get_viewport().get_visible_rect().size.y * 0.70))
     scroller.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     panel.add_child(scroller)
     content = VBoxContainer.new()
