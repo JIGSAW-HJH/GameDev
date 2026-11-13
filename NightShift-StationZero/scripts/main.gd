@@ -100,6 +100,14 @@ var oxygen_mode_button: Button
 var seal_button: Button
 var atmosphere_hint: Label
 var atmosphere_alert: int = 0
+var incident_type: int = 0 # 0 NONE, 1 COOLANT, 2 HULL, 3 BUS ARC
+var incident_timer: float = 0.0
+var containment_cooldown: float = 0.0
+var incidents_contained: int = 0
+var incidents_total: int = 0
+var incident_label: Label
+var incident_button: Button
+var incident_progress: ProgressBar
 
 func _ready() -> void:
     rng.randomize()
@@ -123,6 +131,8 @@ func _process(delta: float) -> void:
     if finished or (game_menu != null and game_menu.is_blocking()):
         return
     remaining = maxf(0.0, remaining - delta)
+    if shift_number >= 13:
+        _update_incident(delta)
     if shift_number >= 7:
         maintenance_cooldown = maxf(0.0, maintenance_cooldown - delta)
         maintenance_integrity = maxf(0.0, maintenance_integrity - delta * (0.85 + float(shift_number - 7) * 0.07))
@@ -170,6 +180,8 @@ func _process(delta: float) -> void:
     for i in range(3):
         var delivered: int = 0 if breakers_tripped[i] else power[i]
         var deficit: float = float(maxi(0, demand[i] - delivered)) + float(shortfall) / 3.0
+        if incident_type == 3 and i == 2:
+            deficit += 0.40
         if deficit > 0.0:
             integrity[i] = maxf(0.0, integrity[i] - deficit * INTEGRITY_DAMAGE_PER_DEFICIT * delta)
         else:
@@ -204,6 +216,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
         "pump": _cycle_cooling_pump()
         "oxygen": _cycle_oxygen_generator()
         "seal": _seal_cabin()
+        "contain": _contain_incident()
 
 func _total_power() -> int:
     var result := 0
@@ -242,6 +255,8 @@ func _toggle_battery() -> void:
 
 func _trigger_event() -> void:
     event_count += 1
+    if shift_number >= 13 and event_count % 4 == 0 and incident_type == 0:
+        _start_compound_incident()
     var stressed: int = rng.randi_range(0, 2)
     demand = [2, 2, 2]
     demand[stressed] = 3
@@ -311,6 +326,11 @@ func _reset() -> void:
     event_count = 0
     log_lines.clear()
     total_faults = 0
+    incident_type = 0
+    incident_timer = 0.0
+    containment_cooldown = 0.0
+    incidents_contained = 0
+    incidents_total = 0
     reactor_temp_c = 62.0
     cooling_pump_mode = 1
     cooling_pump_fault_seconds = 0.0
@@ -417,6 +437,14 @@ func _refresh() -> void:
         seal_button.disabled = finished or shift_number < 12 or pressure_leak_seconds <= 0.0 or seal_cooldown > 0.0
     if atmosphere_hint != null:
         atmosphere_hint.text = "KEEP OXYGEN > 0% / PRESSURE > 50 kPa  •  SEAL LEAKS WITH [H]" if shift_number >= 11 else "ATMOSPHERIC SYSTEMS UNLOCK AT SHIFT 11"
+    if incident_label != null:
+        incident_label.text = "ACTIVE INCIDENT  /  %s  /  %.0fS REMAINING" % [_incident_name(), incident_timer] if incident_type != 0 else ("COMPOUND INCIDENT PROTOCOL / STANDBY" if shift_number >= 13 else "COMPOUND INCIDENT PROTOCOL / UNLOCK SHIFT 13")
+        incident_label.add_theme_color_override("font_color", RED if incident_type != 0 else CYAN)
+    if incident_progress != null:
+        incident_progress.value = incident_timer
+    if incident_button != null:
+        incident_button.text = "CONTAIN [J]" if incident_type != 0 else "NO ACTIVE INCIDENT"
+        incident_button.disabled = finished or shift_number < 13 or incident_type == 0 or containment_cooldown > 0.0
     var allocated: int = _total_power()
     var capacity: int = _available_capacity()
     budget_label.text = "%d / %d UNITS ASSIGNED    •    %d FREE" % [allocated, capacity, maxi(0, capacity - allocated)]
@@ -436,7 +464,9 @@ func _refresh() -> void:
         bus_diagram.set("brownout", allocated > capacity)
         bus_diagram.set("breakers_tripped", breakers_tripped.duplicate())
     var warning := ""
-    if shift_number >= 11 and (oxygen_pct <= 25.0 or cabin_pressure_kpa <= 65.0):
+    if shift_number >= 13 and incident_type != 0:
+        warning = "COMPOUND INCIDENT: " + _incident_name()
+    elif shift_number >= 11 and (oxygen_pct <= 25.0 or cabin_pressure_kpa <= 65.0):
         warning = "CRITICAL ATMOSPHERIC CONDITIONS"
     elif shift_number >= 11 and (oxygen_pct <= 50.0 or cabin_pressure_kpa <= 80.0):
         warning = "ATMOSPHERIC LEVELS LOW"
@@ -716,6 +746,22 @@ func _build_ui() -> void:
     atmosphere_hint = _label("ATMOSPHERIC SYSTEMS UNLOCK AT SHIFT 11", 11, MUTED)
     atmosphere_stack.add_child(atmosphere_hint)
 
+    var incident_panel := _panel(true)
+    root.add_child(incident_panel)
+    var incident_stack := _vbox(6)
+    incident_panel.add_child(incident_stack)
+    var incident_row := _hbox(10)
+    incident_stack.add_child(incident_row)
+    incident_label = _label("COMPOUND INCIDENT PROTOCOL / UNLOCK SHIFT 13", 13, CYAN)
+    incident_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    incident_row.add_child(incident_label)
+    incident_button = _button("NO ACTIVE INCIDENT")
+    incident_button.pressed.connect(_contain_incident)
+    incident_row.add_child(incident_button)
+    incident_progress = _bar(18.0, 0.0)
+    incident_stack.add_child(incident_progress)
+    incident_stack.add_child(_label("SHIFT 13+: ISOLATE MULTI-SYSTEM INCIDENTS WITH [J] BEFORE THEY ESCALATE.", 11, MUTED))
+
     var systems_row := _hbox(12)
     systems_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
     root.add_child(systems_row)
@@ -794,7 +840,7 @@ func _build_ui() -> void:
     log_stack.add_child(log_label)
     var footer := _hbox()
     root.add_child(footer)
-    var help := _label("Q/A LIFE   W/S COOL   E/D COMMS   B BATTERY   1/2/3 CB   T SERVICE   P PUMP   G OXYGEN   H SEAL   C ACK   M MUTE", 12, MUTED)
+    var help := _label("Q/A LIFE   W/S COOL   E/D COMMS   B BATTERY  1/2/3 CB  T SERVICE  P PUMP  G OXYGEN  H SEAL  J CONTAIN  C ACK   M MUTE", 12, MUTED)
     help.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     footer.add_child(help)
     restart_button = _button("RESTART SHIFT")
@@ -811,7 +857,12 @@ func _toggle_audio() -> void:
 
 func get_save_data() -> Dictionary:
     return {
-        "version": 4,
+        "version": 5,
+        "incident_type": incident_type,
+        "incident_timer": incident_timer,
+        "containment_cooldown": containment_cooldown,
+        "incidents_contained": incidents_contained,
+        "incidents_total": incidents_total,
         "oxygen_pct": oxygen_pct,
         "cabin_pressure_kpa": cabin_pressure_kpa,
         "oxygen_mode": oxygen_mode,
@@ -843,7 +894,7 @@ func get_save_data() -> Dictionary:
     }
 
 func load_save_data(data: Dictionary) -> bool:
-    if int(data.get("version", -1)) not in [1, 2, 3, 4]:
+    if int(data.get("version", -1)) not in [1, 2, 3, 4, 5]:
         return false
     for name in ["power", "demand", "integrity", "breakers_tripped", "breaker_cooldowns", "log_lines"]:
         if not data.has(name) or typeof(data[name]) != TYPE_ARRAY:
@@ -856,6 +907,13 @@ func load_save_data(data: Dictionary) -> bool:
     maintenance_integrity = clampf(float(data.get("maintenance_integrity", 100.0)), 0.0, 100.0)
     maintenance_cooldown = clampf(float(data.get("maintenance_cooldown", 0.0)), 0.0, 30.0)
     total_faults = maxi(0, int(data.get("total_faults", 0)))
+    incident_type = clampi(int(data.get("incident_type", 0)), 0, 3)
+    incident_timer = clampf(float(data.get("incident_timer", 0.0)), 0.0, 18.0)
+    containment_cooldown = clampf(float(data.get("containment_cooldown", 0.0)), 0.0, 12.0)
+    incidents_contained = maxi(0, int(data.get("incidents_contained", 0)))
+    incidents_total = maxi(0, int(data.get("incidents_total", 0)))
+    if incident_timer <= 0.0:
+        incident_type = 0
     reactor_temp_c = clampf(float(data.get("reactor_temp_c", 62.0)), 0.0, 130.0)
     cooling_pump_mode = clampi(int(data.get("cooling_pump_mode", 1)), 0, 2)
     cooling_pump_fault_seconds = clampf(float(data.get("cooling_pump_fault_seconds", 0.0)), 0.0, 8.0)
@@ -929,7 +987,9 @@ func get_shift_phase() -> String:
         return "AUXILIARY OPERATIONS"
     if shift_number <= 10:
         return "THERMAL OPERATIONS"
-    return "ATMOSPHERIC OPERATIONS"
+    if shift_number <= 12:
+        return "ATMOSPHERIC OPERATIONS"
+    return "ADVANCED EMERGENCY OPERATIONS"
 
 func start_campaign() -> void:
     shift_number = 1
@@ -988,6 +1048,8 @@ func _update_thermal(delta: float) -> void:
             cooling_rate = 1.4
     # These are gameplay tuning rates, not thermodynamic calculations.
     var heat_rate: float = 0.50 + float(maxi(0, 6 - reactor_output)) * 0.12
+    if incident_type == 1:
+        heat_rate += 0.65
     if not powered:
         heat_rate += 0.12
     reactor_temp_c = clampf(reactor_temp_c + (heat_rate - cooling_rate) * delta, 35.0, 130.0)
@@ -1051,6 +1113,8 @@ func _update_atmosphere(delta: float) -> void:
     var pressure_rate := 0.16 if life_powered and oxygen_mode != 0 else -0.12
     if pressure_leak_seconds > 0.0:
         pressure_rate -= 1.25
+    if incident_type == 2:
+        pressure_rate -= 0.8
     cabin_pressure_kpa = clampf(cabin_pressure_kpa + pressure_rate * delta, 0.0, 101.0)
     var level := 0
     if oxygen_pct <= 25.0 or cabin_pressure_kpa <= 65.0:
@@ -1067,3 +1131,43 @@ func _update_atmosphere(delta: float) -> void:
             _add_log("ATMOSPHERIC CONDITIONS RETURNED TO SAFE RANGE.")
     if oxygen_pct <= 0.0 or cabin_pressure_kpa <= 50.0:
         _finish(false, "HABITAT ATMOSPHERE FAILED.")
+
+func _incident_name() -> String:
+    match incident_type:
+        1:
+            return "COOLANT MANIFOLD RUPTURE"
+        2:
+            return "HULL PRESSURE BREACH"
+        3:
+            return "COMMUNICATIONS BUS ARC"
+        _:
+            return "NONE"
+
+func _start_compound_incident() -> void:
+    # Every fourth event from Shift 13; a new event cannot overwrite an active one.
+    incident_type = 1 + rng.randi_range(0, 2)
+    incident_timer = 18.0
+    incidents_total += 1
+    station_audio.effect("critical")
+    _add_log("CRITICAL: COMPOUND INCIDENT / %s. CONTAIN WITH [J]." % _incident_name())
+
+func _update_incident(delta: float) -> void:
+    containment_cooldown = maxf(0.0, containment_cooldown - delta)
+    if incident_type == 0:
+        return
+    incident_timer = maxf(0.0, incident_timer - delta)
+    if incident_timer <= 0.0:
+        _add_log("WARNING: %s SUBSIDED WITHOUT OPERATOR CONTAINMENT." % _incident_name())
+        incident_type = 0
+
+func _contain_incident() -> void:
+    if shift_number < 13 or finished or incident_type == 0 or containment_cooldown > 0.0 or (game_menu != null and game_menu.is_blocking()):
+        return
+    var name: String = _incident_name()
+    incident_type = 0
+    incident_timer = 0.0
+    containment_cooldown = 10.0
+    incidents_contained += 1
+    station_audio.effect("success")
+    _add_log("EMERGENCY CONTAINMENT COMPLETED: %s." % name)
+    _refresh()
