@@ -2,7 +2,7 @@
 
 **GitHub Game Off 2026** — theme **SHIFT**. Single-screen science-fiction engineering survival game built using **Godot 4.6**.
 
-**Current candidate: V0.7 — Progressive Shift Campaign** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
+**Current candidate: V0.7.1 — Scrollable Engineering Recorder** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
 
 ## Running
 
@@ -22,6 +22,10 @@
 Events become gradually more frequent, though the balanced V0.3.1 battery, recovery and integrity-damage rates are retained. This is an arcade simulation, not a real electrical model.
 
 When you win, select **Start Next Shift**. After a loss select **Retry This Shift**. The result screen reports number of events, breaker trips, remaining battery and mean integrity.
+
+## Event recorder and small-screen layout
+
+The engineering event recorder now has its own vertical scrollbar and retains up to 150 log entries. Newest messages appear first, and the viewer returns to the top whenever a new event is logged. The complete control-room page can also scroll on monitors where the whole interface does not fit vertically; this prevents the bottom controls from being clipped.
 
 ## Menu and saves
 
@@ -58,4 +62,4 @@ Key mappings can be changed in **Settings**. Esc is reserved.
 
 ## Testing status
 
-V0.7 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
+V0.7.1 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
