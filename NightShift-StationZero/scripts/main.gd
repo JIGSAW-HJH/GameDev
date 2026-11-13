@@ -87,6 +87,19 @@ var temperature_bar: ProgressBar
 var cooling_pump_button: Button
 var cooling_tip_label: Label
 var temp_alert_state: int = 0
+var oxygen_pct: float = 96.0
+var cabin_pressure_kpa: float = 101.0
+var oxygen_mode: int = 1 # 0 OFF, 1 AUTO, 2 BOOST
+var pressure_leak_seconds: float = 0.0
+var seal_cooldown: float = 0.0
+var oxygen_label: Label
+var oxygen_bar: ProgressBar
+var pressure_label: Label
+var pressure_bar: ProgressBar
+var oxygen_mode_button: Button
+var seal_button: Button
+var atmosphere_hint: Label
+var atmosphere_alert: int = 0
 
 func _ready() -> void:
     rng.randomize()
@@ -115,6 +128,11 @@ func _process(delta: float) -> void:
         maintenance_integrity = maxf(0.0, maintenance_integrity - delta * (0.85 + float(shift_number - 7) * 0.07))
         if maintenance_integrity <= 0.0:
             _finish(false, "AUXILIARY STABILISER FAILED.")
+            _refresh()
+            return
+    if shift_number >= 11:
+        _update_atmosphere(delta)
+        if finished:
             _refresh()
             return
     if shift_number >= 9:
@@ -184,6 +202,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
         "mute": _toggle_audio()
         "service": _service_auxiliary()
         "pump": _cycle_cooling_pump()
+        "oxygen": _cycle_oxygen_generator()
+        "seal": _seal_cabin()
 
 func _total_power() -> int:
     var result := 0
@@ -229,6 +249,9 @@ func _trigger_event() -> void:
     # Alternating events keep faults recoverable and preserve a clear power puzzle.
     if shift_number >= 3 and event_count % 2 == 0 and not breakers_tripped.has(true):
         _trip_breaker(stressed)
+    if shift_number >= 12 and event_count % 5 == 0 and pressure_leak_seconds <= 0.0:
+        pressure_leak_seconds = 14.0
+        _add_log("FAULT: CABIN PRESSURE LEAK DETECTED. ENGAGE EMERGENCY SEAL [H].")
     if shift_number >= 10 and event_count % 4 == 0:
         cooling_pump_fault_seconds = 8.0
         _add_log("FAULT: COOLING PUMP TEMPORARILY OFFLINE FOR 8 SECONDS.")
@@ -292,6 +315,12 @@ func _reset() -> void:
     cooling_pump_mode = 1
     cooling_pump_fault_seconds = 0.0
     temp_alert_state = 0
+    oxygen_pct = 96.0
+    cabin_pressure_kpa = 101.0
+    oxygen_mode = 1
+    pressure_leak_seconds = 0.0
+    seal_cooldown = 0.0
+    atmosphere_alert = 0
     maintenance_integrity = 100.0
     maintenance_cooldown = 0.0
     breakers_tripped = [false, false, false]
@@ -370,6 +399,24 @@ func _refresh() -> void:
         cooling_pump_button.disabled = finished or shift_number < 9
     if cooling_tip_label != null:
         cooling_tip_label.text = "TEMP WARNING 85°C  /  CRITICAL 105°C  /  SHUTDOWN 130°C" if shift_number >= 9 else "AUTO / BOOST COOLING CONTROL UNLOCKS AT SHIFT 09"
+    if oxygen_label != null:
+        oxygen_label.text = "OXYGEN RESERVE  %.0f%%" % oxygen_pct if shift_number >= 11 else "OXYGEN GENERATOR / UNLOCKS SHIFT 11"
+        oxygen_label.add_theme_color_override("font_color", RED if shift_number >= 11 and oxygen_pct <= 25.0 else (AMBER if shift_number >= 11 and oxygen_pct <= 50.0 else CYAN))
+    if pressure_label != null:
+        pressure_label.text = "CABIN PRESSURE  %.1f kPa" % cabin_pressure_kpa if shift_number >= 11 else "PRESSURE MONITOR / UNLOCKS SHIFT 11"
+        pressure_label.add_theme_color_override("font_color", RED if shift_number >= 11 and cabin_pressure_kpa <= 65.0 else (AMBER if shift_number >= 11 and cabin_pressure_kpa <= 80.0 else CYAN))
+    if oxygen_bar != null:
+        oxygen_bar.value = oxygen_pct
+    if pressure_bar != null:
+        pressure_bar.value = cabin_pressure_kpa
+    if oxygen_mode_button != null:
+        oxygen_mode_button.text = "OXYGEN: %s [G]" % _oxygen_mode_name() if shift_number >= 11 else "OXYGEN LOCKED"
+        oxygen_mode_button.disabled = finished or shift_number < 11
+    if seal_button != null:
+        seal_button.text = "SEAL CABIN [H]" if pressure_leak_seconds > 0.0 else "CABIN SEALED"
+        seal_button.disabled = finished or shift_number < 12 or pressure_leak_seconds <= 0.0 or seal_cooldown > 0.0
+    if atmosphere_hint != null:
+        atmosphere_hint.text = "KEEP OXYGEN > 0% / PRESSURE > 50 kPa  •  SEAL LEAKS WITH [H]" if shift_number >= 11 else "ATMOSPHERIC SYSTEMS UNLOCK AT SHIFT 11"
     var allocated: int = _total_power()
     var capacity: int = _available_capacity()
     budget_label.text = "%d / %d UNITS ASSIGNED    •    %d FREE" % [allocated, capacity, maxi(0, capacity - allocated)]
@@ -389,7 +436,13 @@ func _refresh() -> void:
         bus_diagram.set("brownout", allocated > capacity)
         bus_diagram.set("breakers_tripped", breakers_tripped.duplicate())
     var warning := ""
-    if shift_number >= 9 and reactor_temp_c >= 105.0:
+    if shift_number >= 11 and (oxygen_pct <= 25.0 or cabin_pressure_kpa <= 65.0):
+        warning = "CRITICAL ATMOSPHERIC CONDITIONS"
+    elif shift_number >= 11 and (oxygen_pct <= 50.0 or cabin_pressure_kpa <= 80.0):
+        warning = "ATMOSPHERIC LEVELS LOW"
+    elif shift_number >= 12 and pressure_leak_seconds > 0.0:
+        warning = "CABIN PRESSURE LEAK"
+    elif shift_number >= 9 and reactor_temp_c >= 105.0:
         warning = "REACTOR TEMPERATURE CRITICAL"
     elif shift_number >= 9 and reactor_temp_c >= 85.0:
         warning = "REACTOR TEMPERATURE HIGH"
@@ -635,6 +688,34 @@ func _build_ui() -> void:
     cooling_tip_label = _label("AUTO / BOOST COOLING CONTROL UNLOCKS AT SHIFT 09", 11, MUTED)
     thermal_stack.add_child(cooling_tip_label)
 
+    var atmosphere_panel := _panel(true)
+    root.add_child(atmosphere_panel)
+    var atmosphere_stack := _vbox(6)
+    atmosphere_panel.add_child(atmosphere_stack)
+    atmosphere_stack.add_child(_label("08   ATMOSPHERIC SYSTEMS / LIFE SUPPORT CONTROL", 13, CYAN))
+    var atmosphere_top := _hbox(12)
+    atmosphere_stack.add_child(atmosphere_top)
+    oxygen_label = _label("OXYGEN GENERATOR / UNLOCKS SHIFT 11", 14, CYAN)
+    oxygen_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    atmosphere_top.add_child(oxygen_label)
+    oxygen_mode_button = _button("OXYGEN LOCKED")
+    oxygen_mode_button.pressed.connect(_cycle_oxygen_generator)
+    atmosphere_top.add_child(oxygen_mode_button)
+    oxygen_bar = _bar(100.0, 96.0)
+    atmosphere_stack.add_child(oxygen_bar)
+    var atmosphere_bottom := _hbox(12)
+    atmosphere_stack.add_child(atmosphere_bottom)
+    pressure_label = _label("PRESSURE MONITOR / UNLOCKS SHIFT 11", 14, CYAN)
+    pressure_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    atmosphere_bottom.add_child(pressure_label)
+    seal_button = _button("CABIN SEALED")
+    seal_button.pressed.connect(_seal_cabin)
+    atmosphere_bottom.add_child(seal_button)
+    pressure_bar = _bar(110.0, 101.0)
+    atmosphere_stack.add_child(pressure_bar)
+    atmosphere_hint = _label("ATMOSPHERIC SYSTEMS UNLOCK AT SHIFT 11", 11, MUTED)
+    atmosphere_stack.add_child(atmosphere_hint)
+
     var systems_row := _hbox(12)
     systems_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
     root.add_child(systems_row)
@@ -713,7 +794,7 @@ func _build_ui() -> void:
     log_stack.add_child(log_label)
     var footer := _hbox()
     root.add_child(footer)
-    var help := _label("Q/A LIFE   W/S COOL   E/D COMMS   B BATTERY   1/2/3 BREAKERS   T SERVICE   P PUMP   C ACK   M MUTE", 12, MUTED)
+    var help := _label("Q/A LIFE   W/S COOL   E/D COMMS   B BATTERY   1/2/3 CB   T SERVICE   P PUMP   G OXYGEN   H SEAL   C ACK   M MUTE", 12, MUTED)
     help.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     footer.add_child(help)
     restart_button = _button("RESTART SHIFT")
@@ -730,7 +811,12 @@ func _toggle_audio() -> void:
 
 func get_save_data() -> Dictionary:
     return {
-        "version": 3,
+        "version": 4,
+        "oxygen_pct": oxygen_pct,
+        "cabin_pressure_kpa": cabin_pressure_kpa,
+        "oxygen_mode": oxygen_mode,
+        "pressure_leak_seconds": pressure_leak_seconds,
+        "seal_cooldown": seal_cooldown,
         "reactor_temp_c": reactor_temp_c,
         "cooling_pump_mode": cooling_pump_mode,
         "cooling_pump_fault_seconds": cooling_pump_fault_seconds,
@@ -757,7 +843,7 @@ func get_save_data() -> Dictionary:
     }
 
 func load_save_data(data: Dictionary) -> bool:
-    if int(data.get("version", -1)) not in [1, 2, 3]:
+    if int(data.get("version", -1)) not in [1, 2, 3, 4]:
         return false
     for name in ["power", "demand", "integrity", "breakers_tripped", "breaker_cooldowns", "log_lines"]:
         if not data.has(name) or typeof(data[name]) != TYPE_ARRAY:
@@ -774,6 +860,12 @@ func load_save_data(data: Dictionary) -> bool:
     cooling_pump_mode = clampi(int(data.get("cooling_pump_mode", 1)), 0, 2)
     cooling_pump_fault_seconds = clampf(float(data.get("cooling_pump_fault_seconds", 0.0)), 0.0, 8.0)
     temp_alert_state = 0
+    oxygen_pct = clampf(float(data.get("oxygen_pct", 96.0)), 0.0, 100.0)
+    cabin_pressure_kpa = clampf(float(data.get("cabin_pressure_kpa", 101.0)), 0.0, 110.0)
+    oxygen_mode = clampi(int(data.get("oxygen_mode", 1)), 0, 2)
+    pressure_leak_seconds = clampf(float(data.get("pressure_leak_seconds", 0.0)), 0.0, 14.0)
+    seal_cooldown = clampf(float(data.get("seal_cooldown", 0.0)), 0.0, 12.0)
+    atmosphere_alert = 0
     remaining = clampf(float(data.get("remaining", shift_duration)), 0.1, shift_duration)
     event_timer = clampf(float(data.get("event_timer", get_event_interval())), 0.1, get_event_interval())
     reactor_output = clampi(int(data.get("reactor_output", REACTOR_NOMINAL)), 1, REACTOR_NOMINAL)
@@ -835,7 +927,9 @@ func get_shift_phase() -> String:
         return "REACTOR STABILITY"
     if shift_number <= 8:
         return "AUXILIARY OPERATIONS"
-    return "THERMAL OPERATIONS"
+    if shift_number <= 10:
+        return "THERMAL OPERATIONS"
+    return "ATMOSPHERIC OPERATIONS"
 
 func start_campaign() -> void:
     shift_number = 1
@@ -912,3 +1006,64 @@ func _update_thermal(delta: float) -> void:
             _add_log("REACTOR TEMPERATURE RETURNED TO NORMAL RANGE.")
     if reactor_temp_c >= 130.0:
         _finish(false, "REACTOR OVERHEAT SHUTDOWN.")
+
+func _oxygen_mode_name() -> String:
+    match oxygen_mode:
+        0:
+            return "OFF"
+        1:
+            return "AUTO"
+        _:
+            return "BOOST"
+
+func _cycle_oxygen_generator() -> void:
+    if shift_number < 11 or finished or (game_menu != null and game_menu.is_blocking()):
+        return
+    oxygen_mode = (oxygen_mode + 1) % 3
+    station_audio.effect("click")
+    _add_log("OXYGEN GENERATOR SET TO %s." % _oxygen_mode_name())
+    _refresh()
+
+func _seal_cabin() -> void:
+    if shift_number < 12 or finished or pressure_leak_seconds <= 0.0 or seal_cooldown > 0.0 or (game_menu != null and game_menu.is_blocking()):
+        return
+    pressure_leak_seconds = 0.0
+    seal_cooldown = 8.0
+    station_audio.effect("success")
+    _add_log("CABIN EMERGENCY SEAL ENGAGED. PRESSURE RECOVERY ACTIVE.")
+    _refresh()
+
+func _update_atmosphere(delta: float) -> void:
+    seal_cooldown = maxf(0.0, seal_cooldown - delta)
+    if pressure_leak_seconds > 0.0:
+        pressure_leak_seconds = maxf(0.0, pressure_leak_seconds - delta)
+        if pressure_leak_seconds <= 0.0:
+            _add_log("CABIN LEAK AUTO-CONTAINED; PRESSURISATION RESTORING.")
+    var life_powered: bool = not breakers_tripped[0] and power[0] >= demand[0]
+    var generation := 0.0
+    if life_powered:
+        if oxygen_mode == 1:
+            generation = 0.37
+        elif oxygen_mode == 2:
+            generation = 0.82
+    # Fictional arcade balancing, not real crew oxygen dynamics.
+    oxygen_pct = clampf(oxygen_pct + (generation - 0.25) * delta, 0.0, 100.0)
+    var pressure_rate := 0.16 if life_powered and oxygen_mode != 0 else -0.12
+    if pressure_leak_seconds > 0.0:
+        pressure_rate -= 1.25
+    cabin_pressure_kpa = clampf(cabin_pressure_kpa + pressure_rate * delta, 0.0, 101.0)
+    var level := 0
+    if oxygen_pct <= 25.0 or cabin_pressure_kpa <= 65.0:
+        level = 2
+    elif oxygen_pct <= 50.0 or cabin_pressure_kpa <= 80.0:
+        level = 1
+    if level != atmosphere_alert:
+        atmosphere_alert = level
+        if level == 2:
+            _add_log("CRITICAL: ATMOSPHERIC RESERVES LOW. RESTORE LIFE SUPPORT.")
+        elif level == 1:
+            _add_log("WARNING: OXYGEN OR CABIN PRESSURE LOW.")
+        else:
+            _add_log("ATMOSPHERIC CONDITIONS RETURNED TO SAFE RANGE.")
+    if oxygen_pct <= 0.0 or cabin_pressure_kpa <= 50.0:
+        _finish(false, "HABITAT ATMOSPHERE FAILED.")
