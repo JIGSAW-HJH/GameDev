@@ -1,0 +1,5 @@
+# Godot-generated files
+**/.godot/
+*.tmp
+.DS_Store
+Thumbs.db
