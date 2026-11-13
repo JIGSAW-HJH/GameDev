@@ -2,13 +2,25 @@
 
 **GitHub Game Off 2026** — theme **SHIFT**. Single-screen science-fiction engineering survival game built using **Godot 4.6**.
 
-**Current candidate: V1.2 — Fixed SCADA Dashboard & Fault-Aware Tabs** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
+**Current candidate: V1.2.1 — Expanded Diagram & SCADA Color Coding** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
 
 ## Running
 
 1. Open `project.godot` in Godot 4.6.
 2. Press **F5**. The game opens full-screen with the main menu.
 3. Select **New Campaign** to start at Shift 1, or load a saved campaign.
+
+## Visual polish and diagram legibility (V1.2.1)
+
+The BUS + AUX single-line drawing area has been increased from **70 to 153 reference pixels**. The diagram's internal vertical coordinates have been redistributed so its lower MAIN BUS label, source blocks and three branch labels fit within the new drawing area without clipping. The fixed detail region has also been granted more vertical space; there are still no gameplay scroll containers.
+
+Color-coded subsystem accents improve visual separation while retaining fault priorities:
+- **Reactor:** orange; **battery:** gold.
+- **Life support and atmosphere:** mint green; **cooling:** blue; **communications:** violet.
+- **Electrical overview:** cyan; **incident management:** amber.
+- **Warnings:** amber; **critical/tripped/low-integrity:** red.
+
+These colors are applied consistently to panels, headings, gauges, tab selection and the live single-line diagram. The update does not change shift mechanics, keyboard bindings, saves, or GitHub Actions configuration. Layout has not yet been tested inside Godot on the user's display.
 
 ## Fixed gameplay dashboard (V1.2)
 
