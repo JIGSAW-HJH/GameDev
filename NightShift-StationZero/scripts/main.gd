@@ -68,7 +68,7 @@ var breakers_tripped: Array[bool] = [false, false, false]
 var breaker_cooldowns: Array[float] = [0.0, 0.0, 0.0]
 var breaker_labels: Array[Label] = []
 var breaker_buttons: Array[Button] = []
-var station_audio: Node
+var station_audio
 var audio_button: Button
 
 func _ready() -> void:
