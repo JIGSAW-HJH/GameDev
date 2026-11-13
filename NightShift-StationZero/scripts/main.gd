@@ -713,7 +713,7 @@ func _build_ui() -> void:
     log_stack.add_child(log_label)
     var footer := _hbox()
     root.add_child(footer)
-    var help := _label("Q/A LIFE   W/S COOL   E/D COMMS   B BATTERY   1/2/3 BREAKERS   C ACK   M MUTE   R RESTART", 12, MUTED)
+    var help := _label("Q/A LIFE   W/S COOL   E/D COMMS   B BATTERY   1/2/3 BREAKERS   T SERVICE   P PUMP   C ACK   M MUTE", 12, MUTED)
     help.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     footer.add_child(help)
     restart_button = _button("RESTART SHIFT")
