@@ -19,7 +19,7 @@ const MUTED := Color("#8ba6b7")
 const BG := Color("#060d17")
 const PANEL := Color("#102335")
 const BORDER := Color("#28546a")
-var game: Control
+var game
 var overlay: ColorRect
 var content: VBoxContainer
 var current_page := "title"
@@ -35,7 +35,7 @@ var status_message := ""
 var confirm_dialog: ConfirmationDialog
 
 func _ready() -> void:
-    game = get_parent() as Control
+    game = get_parent()
     process_mode = Node.PROCESS_MODE_ALWAYS
     _load_settings()
     _apply_audio()
@@ -282,7 +282,7 @@ func _toggle_sound() -> void:
 func _apply_audio() -> void:
     if game == null or game.station_audio == null:
         return
-    var audio: Node = game.station_audio
+    var audio = game.station_audio
     var master_db := linear_to_db(maxf(master_volume, 0.001))
     AudioServer.set_bus_volume_db(0, master_db)
     AudioServer.set_bus_mute(0, not show_audio)
