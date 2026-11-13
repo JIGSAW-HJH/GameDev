@@ -1,5 +1,5 @@
 extends Control
-## NIGHT SHIFT: STATION ZERO — V0.7 progressive shift campaign.
+## NIGHT SHIFT: STATION ZERO — V1.2 fixed console with fault-aware detail tabs.
 ## Self-contained UI: no downloaded artwork, plugins, or fonts required.
 
 const SHIFT_SECONDS := 120.0
@@ -108,6 +108,11 @@ var incidents_total: int = 0
 var incident_label: Label
 var incident_button: Button
 var incident_progress: ProgressBar
+var detail_pages: Array[Control] = []
+var detail_buttons: Array[Button] = []
+var active_detail_tab: int = 0
+var tab_alarm_flags: Array[bool] = [false, false, false, false, false]
+var tab_flash_clock: float = 0.0
 
 func _ready() -> void:
     rng.randomize()
@@ -130,6 +135,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
     if finished or (game_menu != null and game_menu.is_blocking()):
         return
+    tab_flash_clock += delta
     remaining = maxf(0.0, remaining - delta)
     if shift_number >= 13:
         _update_incident(delta)
@@ -372,7 +378,8 @@ func _render_log() -> void:
     if log_label == null:
         return
     log_label.clear()
-    for entry in log_lines:
+    for i in range(mini(6, log_lines.size())):
+        var entry: String = log_lines[i]
         var ink := MUTED
         if "[CRIT]" in entry:
             ink = RED
@@ -384,7 +391,7 @@ func _render_log() -> void:
         log_label.add_text(entry + "\n")
         log_label.pop()
     # Newest records are inserted first; keep the viewer anchored at the top.
-    log_label.scroll_to_line(0)
+    # Fixed six-line view intentionally has no scrollbar.
 
 func _acknowledge_alarm() -> void:
     if finished or (game_menu != null and game_menu.is_blocking()):
@@ -400,6 +407,7 @@ func _acknowledge_alarm() -> void:
     _refresh()
 
 func _refresh() -> void:
+    _update_detail_tabs()
     var secs: int = int(ceil(remaining))
     clock_label.text = "%02d:%02d" % [int(secs / 60), secs % 60]
     if shift_label != null:
@@ -541,7 +549,7 @@ func _panel(dark: bool = false) -> PanelContainer:
     style.border_color = BORDER
     style.set_border_width_all(1)
     style.set_corner_radius_all(7)
-    style.set_content_margin_all(14)
+    style.set_content_margin_all(8)
     p.add_theme_stylebox_override("panel", style)
     return p
 
@@ -574,7 +582,7 @@ func _bar(maximum: float, current: float) -> ProgressBar:
 func _button(title: String) -> Button:
     var b := Button.new()
     b.text = title
-    b.custom_minimum_size = Vector2(49, 34)
+    b.custom_minimum_size = Vector2(46, 30)
     b.add_theme_color_override("font_color", TEXT)
     b.add_theme_color_override("font_hover_color", Color.WHITE)
     var idle := StyleBoxFlat.new()
@@ -589,6 +597,35 @@ func _button(title: String) -> Button:
     b.add_theme_stylebox_override("hover", hover)
     return b
 
+func _set_detail_tab(index: int) -> void:
+    active_detail_tab = clampi(index, 0, detail_pages.size() - 1)
+    for i in range(detail_pages.size()):
+        detail_pages[i].visible = i == active_detail_tab
+    _update_detail_tabs()
+
+func _update_detail_tabs() -> void:
+    if detail_buttons.size() != 5:
+        return
+    var trips: bool = breakers_tripped.has(true)
+    var bus_fault: bool = trips or _total_power() > _available_capacity() or (shift_number >= 7 and maintenance_integrity < 35.0)
+    var thermal_fault: bool = shift_number >= 9 and (reactor_temp_c >= 85.0 or cooling_pump_fault_seconds > 0.0)
+    var atmospheric_fault: bool = shift_number >= 11 and (oxygen_pct <= 50.0 or cabin_pressure_kpa <= 80.0 or pressure_leak_seconds > 0.0)
+    var incident_fault: bool = shift_number >= 13 and incident_type != 0
+    var power_fault: bool = false
+    for j in range(3):
+        if power[j] < demand[j] or integrity[j] < 40.0:
+            power_fault = true
+            break
+    tab_alarm_flags = [bus_fault or power_fault, thermal_fault, atmospheric_fault, incident_fault, false]
+    var names := ["BUS + AUX", "THERMAL", "ATMOSPHERE", "INCIDENTS", "EVENT LOG"]
+    for i in range(5):
+        var attention: bool = tab_alarm_flags[i]
+        var blink: bool = fposmod(tab_flash_clock, 1.0) < 0.5
+        var prefix: String = "▲ " if attention and blink else ("! " if attention else "")
+        detail_buttons[i].text = prefix + names[i]
+        detail_buttons[i].add_theme_color_override("font_color", RED if attention and blink else (CYAN if i == active_detail_tab else TEXT))
+        detail_buttons[i].button_pressed = i == active_detail_tab
+
 func _build_ui() -> void:
     var bg := ColorRect.new()
     bg.color = BG
@@ -598,31 +635,26 @@ func _build_ui() -> void:
     var margins := MarginContainer.new()
     margins.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     for side in ["left", "right", "top", "bottom"]:
-        margins.add_theme_constant_override("margin_" + side, 18)
+        margins.add_theme_constant_override("margin_" + side, 10)
     add_child(margins)
-    # The entire console can scroll if the monitor is shorter than our layout.
-    # The event recorder below has its own independent vertical scrollbar.
-    var page_scroll := ScrollContainer.new()
-    page_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    page_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    page_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-    margins.add_child(page_scroll)
-    var root := _vbox(9)
+    # Fixed dashboard. No vertical or horizontal scrolling in gameplay.
+    var root := _vbox(6)
     root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    page_scroll.add_child(root)
+    root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    margins.add_child(root)
     var header := _hbox()
     root.add_child(header)
     var head_left := _vbox(2)
     head_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     header.add_child(head_left)
     head_left.add_child(_label("OS / 07    ·    ORBITAL ENGINEERING NETWORK    ·    SECURE OPERATOR TERMINAL", 12, CYAN))
-    head_left.add_child(_label("NIGHT SHIFT   /   STATION ZERO", 29))
+    head_left.add_child(_label("NIGHT SHIFT   /   STATION ZERO", 24))
     shift_label = _label("SHIFT 01 / POWER TRAINING", 14, CYAN)
     head_left.add_child(shift_label)
     var head_right := _vbox(2)
     header.add_child(head_right)
     head_right.add_child(_label("TIME UNTIL SHIFT HANDOVER", 11, MUTED))
-    clock_label = _label("02:00", 30, CYAN)
+    clock_label = _label("02:00", 26, CYAN)
     head_right.add_child(clock_label)
     var top := _panel(true)
     root.add_child(top)
@@ -647,7 +679,7 @@ func _build_ui() -> void:
     audio_button.pressed.connect(_toggle_audio)
     alarms.add_child(audio_button)
 
-    var power_row := _hbox(12)
+    var power_row := _hbox(8)
     root.add_child(power_row)
     var reactor_panel := _panel()
     reactor_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -679,14 +711,97 @@ func _build_ui() -> void:
     battery_stack.add_child(battery_bar)
     battery_stack.add_child(_label("+2 BUS UNITS WHEN ENABLED  /  DRAINS ONLY WHEN NEEDED  /  FREE REACTOR CAPACITY TO RECHARGE", 11, MUTED))
 
+    var systems_row := _hbox(12)
+    systems_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    root.add_child(systems_row)
+    for i in range(3):
+        var p := _panel()
+        p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        systems_row.add_child(p)
+        var stack := _vbox(5)
+        p.add_child(stack)
+        stack.add_child(_label("0%d   %s" % [i + 4, SYSTEMS[i]], 15, CYAN))
+        var led := _label("●  NOMINAL", 12, GREEN)
+        stack.add_child(led)
+        subsystem_leds.append(led)
+        var line := _label("BUS %s  2U" % ['A', 'B', 'C'][i], 13, CYAN)
+        stack.add_child(line)
+        line_labels.append(line)
+        var health_row := _hbox()
+        stack.add_child(health_row)
+        var health_title := _label("SUBSYSTEM INTEGRITY", 12, MUTED)
+        health_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        health_row.add_child(health_title)
+        var health := _label("100%", 20, GREEN)
+        health_row.add_child(health)
+        integrity_labels.append(health)
+        var bar := _bar(100.0, 100.0)
+        stack.add_child(bar)
+        integrity_bars.append(bar)
+        var request := _label("DEMAND  2 UNITS", 16, GREEN)
+        stack.add_child(request)
+        demand_labels.append(request)
+        
+        var breaker_row := _hbox(8)
+        stack.add_child(breaker_row)
+        var breaker_status := _label("CLOSED / HEALTHY", 12, GREEN)
+        breaker_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        breaker_row.add_child(breaker_status)
+        breaker_labels.append(breaker_status)
+        var reset_cb := _button("RESET CB %d [%d]" % [i + 1, i + 1])
+        reset_cb.pressed.connect(_reset_breaker.bind(i))
+        breaker_row.add_child(reset_cb)
+        breaker_buttons.append(reset_cb)
+        stack.add_child(_label("POWER ALLOCATION", 12, MUTED))
+        var inputs := _hbox(7)
+        stack.add_child(inputs)
+        var minus := _button("−")
+        inputs.add_child(minus)
+        var reading := _label("2 / 3", 22)
+        reading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        reading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        inputs.add_child(reading)
+        var plus := _button("+")
+        inputs.add_child(plus)
+        minus.pressed.connect(_shift_power.bind(i, -1))
+        plus.pressed.connect(_shift_power.bind(i, 1))
+        minus_buttons.append(minus)
+        plus_buttons.append(plus)
+        power_labels.append(reading)
+        stack.add_child(_label("KEYBOARD  " + SHORT_KEYS[i], 11, MUTED))
+
+    # Tabs only change the lower detail area. Power controls, integrity and alarms
+    # stay visible continuously, so changing pages never hides vital operations.
+    var tab_strip := _hbox(6)
+    root.add_child(tab_strip)
+    var tab_names := ["BUS + AUX", "THERMAL", "ATMOSPHERE", "INCIDENTS", "EVENT LOG"]
+    for i in range(5):
+        var tab := _button(tab_names[i])
+        tab.toggle_mode = true
+        tab.custom_minimum_size.y = 32.0
+        tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        tab.pressed.connect(_set_detail_tab.bind(i))
+        tab_strip.add_child(tab)
+        detail_buttons.append(tab)
+    var detail_host := Control.new()
+    detail_host.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    detail_host.custom_minimum_size.y = 146.0
+    root.add_child(detail_host)
+    for i in range(5):
+        var page := VBoxContainer.new()
+        page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+        page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+        detail_host.add_child(page)
+        detail_pages.append(page)
+        page.visible = i == 0
     var bus_panel := _panel(true)
-    root.add_child(bus_panel)
+    detail_pages[0].add_child(bus_panel)
     var bus_stack := _vbox(4)
     bus_panel.add_child(bus_stack)
     bus_stack.add_child(_label("03   HIGH-VOLTAGE DISTRIBUTION  /  LIVE SINGLE-LINE DIAGRAM", 12, CYAN))
     bus_diagram = Control.new()
     bus_diagram.set_script(load("res://scripts/bus_diagram.gd"))
-    bus_diagram.custom_minimum_size = Vector2(0, 112)
+    bus_diagram.custom_minimum_size = Vector2(0, 70)
     bus_diagram.mouse_filter = Control.MOUSE_FILTER_IGNORE
     bus_stack.add_child(bus_diagram)
     bus_label = _label("", 12, MUTED)
@@ -702,7 +817,7 @@ func _build_ui() -> void:
     aux_row.add_child(maintenance_button)
 
     var thermal_panel := _panel(true)
-    root.add_child(thermal_panel)
+    detail_pages[1].add_child(thermal_panel)
     var thermal_stack := _vbox(5)
     thermal_panel.add_child(thermal_stack)
     var thermal_row := _hbox(12)
@@ -719,7 +834,7 @@ func _build_ui() -> void:
     thermal_stack.add_child(cooling_tip_label)
 
     var atmosphere_panel := _panel(true)
-    root.add_child(atmosphere_panel)
+    detail_pages[2].add_child(atmosphere_panel)
     var atmosphere_stack := _vbox(6)
     atmosphere_panel.add_child(atmosphere_stack)
     atmosphere_stack.add_child(_label("08   ATMOSPHERIC SYSTEMS / LIFE SUPPORT CONTROL", 13, CYAN))
@@ -747,7 +862,7 @@ func _build_ui() -> void:
     atmosphere_stack.add_child(atmosphere_hint)
 
     var incident_panel := _panel(true)
-    root.add_child(incident_panel)
+    detail_pages[3].add_child(incident_panel)
     var incident_stack := _vbox(6)
     incident_panel.add_child(incident_stack)
     var incident_row := _hbox(10)
@@ -762,77 +877,16 @@ func _build_ui() -> void:
     incident_stack.add_child(incident_progress)
     incident_stack.add_child(_label("SHIFT 13+: ISOLATE MULTI-SYSTEM INCIDENTS WITH [J] BEFORE THEY ESCALATE.", 11, MUTED))
 
-    var systems_row := _hbox(12)
-    systems_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    root.add_child(systems_row)
-    for i in range(3):
-        var p := _panel()
-        p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        systems_row.add_child(p)
-        var stack := _vbox(11)
-        p.add_child(stack)
-        stack.add_child(_label("0%d   %s" % [i + 4, SYSTEMS[i]], 15, CYAN))
-        var led := _label("●  NOMINAL", 12, GREEN)
-        stack.add_child(led)
-        subsystem_leds.append(led)
-        var line := _label("BUS %s  2U" % ['A', 'B', 'C'][i], 13, CYAN)
-        stack.add_child(line)
-        line_labels.append(line)
-        var health_row := _hbox()
-        stack.add_child(health_row)
-        var health_title := _label("SUBSYSTEM INTEGRITY", 12, MUTED)
-        health_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        health_row.add_child(health_title)
-        var health := _label("100%", 20, GREEN)
-        health_row.add_child(health)
-        integrity_labels.append(health)
-        var bar := _bar(100.0, 100.0)
-        stack.add_child(bar)
-        integrity_bars.append(bar)
-        var request := _label("DEMAND  2 UNITS", 16, GREEN)
-        stack.add_child(request)
-        demand_labels.append(request)
-        var spacer := Control.new()
-        spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-        stack.add_child(spacer)
-        var breaker_row := _hbox(8)
-        stack.add_child(breaker_row)
-        var breaker_status := _label("CLOSED / HEALTHY", 12, GREEN)
-        breaker_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        breaker_row.add_child(breaker_status)
-        breaker_labels.append(breaker_status)
-        var reset_cb := _button("RESET CB %d [%d]" % [i + 1, i + 1])
-        reset_cb.pressed.connect(_reset_breaker.bind(i))
-        breaker_row.add_child(reset_cb)
-        breaker_buttons.append(reset_cb)
-        stack.add_child(_label("POWER ALLOCATION", 12, MUTED))
-        var inputs := _hbox(7)
-        stack.add_child(inputs)
-        var minus := _button("−")
-        inputs.add_child(minus)
-        var reading := _label("2 / 3", 22)
-        reading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        reading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        inputs.add_child(reading)
-        var plus := _button("+")
-        inputs.add_child(plus)
-        minus.pressed.connect(_shift_power.bind(i, -1))
-        plus.pressed.connect(_shift_power.bind(i, 1))
-        minus_buttons.append(minus)
-        plus_buttons.append(plus)
-        power_labels.append(reading)
-        stack.add_child(_label("KEYBOARD  " + SHORT_KEYS[i], 12, MUTED))
-
     var log_panel := _panel(true)
-    root.add_child(log_panel)
+    detail_pages[4].add_child(log_panel)
     var log_stack := _vbox(5)
     log_panel.add_child(log_stack)
-    log_stack.add_child(_label("ENGINEERING EVENT RECORDER  /  NEWEST FIRST  /  SCROLL FOR HISTORY", 13, CYAN))
+    log_stack.add_child(_label("ENGINEERING EVENT RECORDER  /  LATEST EVENTS  /  NO SCROLL", 13, CYAN))
     log_label = RichTextLabel.new()
-    log_label.custom_minimum_size.y = 138
+    log_label.custom_minimum_size.y = 130
     log_label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
     log_label.bbcode_enabled = false
-    log_label.scroll_active = true
+    log_label.scroll_active = false
     log_label.scroll_following = false
     log_label.fit_content = false
     log_label.add_theme_font_size_override("normal_font_size", 13)
@@ -847,6 +901,7 @@ func _build_ui() -> void:
     restart_button.visible = false
     restart_button.pressed.connect(_reset)
     footer.add_child(restart_button)
+    _set_detail_tab(0)
 
 func _toggle_audio() -> void:
     game_menu.show_audio = not game_menu.show_audio
