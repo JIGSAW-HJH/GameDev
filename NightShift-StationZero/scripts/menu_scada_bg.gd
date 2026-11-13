@@ -174,8 +174,8 @@ func _history() -> void:
         _text(Vector2(58.0, 688.0 + float(i) * 26.0), item, ink, 13)
 
     _panel(Rect2(852.0, 633.0, 710.0, 215.0), "06  /  COMMUNICATIONS & SENSORS")
-    var signal: float = -82.0 + 3.0 * sin(elapsed * 0.5)
-    _text(Vector2(875.0, 695.0), "RELAY  145.250 MHz         SIGNAL %.1f dBm" % signal, C_TEXT, 14)
+    var signal_dbm: float = -82.0 + 3.0 * sin(elapsed * 0.5)
+    _text(Vector2(875.0, 695.0), "RELAY  145.250 MHz         SIGNAL %.1f dBm" % signal_dbm, C_TEXT, 14)
     _text(Vector2(875.0, 730.0), "TELEMETRY LINK   /  RECEIVING", C_GREEN, 14)
     _meter(Vector2(875.0, 752.0), 648.0, 77.0 + 9.0 * sin(elapsed * 0.32), 100.0, C_CYAN)
     var event: String = "MINOR ATTENUATION DETECTED" if warning_timer > 0.0 else "NO ACTIVE COMMUNICATIONS ALARMS"
