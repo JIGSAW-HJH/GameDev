@@ -6,14 +6,14 @@ const SAVE_PREFIX := "user://station_zero_slot_%d.json"
 const SETTINGS_PATH := "user://station_zero_settings.cfg"
 const ACTIONS := [
     "life_up", "life_down", "cool_up", "cool_down", "comms_up", "comms_down",
-    "battery", "ack", "breaker_1", "breaker_2", "breaker_3", "mute", "service", "pump"
+    "battery", "ack", "breaker_1", "breaker_2", "breaker_3", "mute", "service", "pump", "oxygen", "seal"
 ]
 const ACTION_LABELS := [
     "Life support +", "Life support -", "Cooling +", "Cooling -",
     "Communications +", "Communications -", "Toggle battery", "Acknowledge alarm",
-    "Reset breaker 1", "Reset breaker 2", "Reset breaker 3", "Mute audio", "Service auxiliary", "Cycle cooling pump"
+    "Reset breaker 1", "Reset breaker 2", "Reset breaker 3", "Mute audio", "Service auxiliary", "Cycle cooling pump", "Cycle oxygen generator", "Seal cabin leak"
 ]
-const DEFAULT_KEYS := [KEY_Q, KEY_A, KEY_W, KEY_S, KEY_E, KEY_D, KEY_B, KEY_C, KEY_1, KEY_2, KEY_3, KEY_M, KEY_T, KEY_P]
+const DEFAULT_KEYS := [KEY_Q, KEY_A, KEY_W, KEY_S, KEY_E, KEY_D, KEY_B, KEY_C, KEY_1, KEY_2, KEY_3, KEY_M, KEY_T, KEY_P, KEY_G, KEY_H]
 const CYAN := Color("#65e2e8")
 const WHITE := Color("#e7f3f7")
 const MUTED := Color("#8ba6b7")
@@ -226,7 +226,9 @@ func _next_phase() -> String:
         return "REACTOR STABILITY"
     if next_num <= 8:
         return "AUXILIARY OPERATIONS"
-    return "THERMAL OPERATIONS"
+    if next_num <= 10:
+        return "THERMAL OPERATIONS"
+    return "ATMOSPHERIC OPERATIONS"
 
 func _start_next_shift() -> void:
     game.start_next_shift()
@@ -354,6 +356,7 @@ func show_howto() -> void:
     content.add_child(_label("Shifts 1–2: practice allocation. Shifts 3–4: tripped circuit breakers; wait three seconds and reset with 1, 2 or 3.", 15))
     content.add_child(_label("Shifts 5–6: temporary reactor derating. Shift 7 onward: maintain the AUX STABILISER using T when available.", 15))
     content.add_child(_label("Shift 9 onward: reactor temperature and cooling pumps unlock. Press P to cycle OFF / AUTO / BOOST. Cooling power must meet demand. Shift 10 onward: temporary pump faults can occur. Keep temperature below 130°C.", 15))
+    content.add_child(_label("Shift 11: oxygen generation and cabin pressure unlock. Press G for OFF / AUTO / BOOST. Keep life support powered. Shift 12 onward: cabin leaks may occur; press H to seal them. Prevent oxygen reaching 0% or pressure falling to 50 kPa.", 15))
     content.add_child(_label("C acknowledges an alarm but does not fix the problem. Esc pauses the game; you can save your campaign in three slots.", 15))
     _button("BACK", _info_back)
 
