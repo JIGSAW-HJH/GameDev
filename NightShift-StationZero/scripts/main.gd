@@ -1,5 +1,5 @@
 extends Control
-## NIGHT SHIFT: STATION ZERO — V0.4 fault-management single-screen SCADA game.
+## NIGHT SHIFT: STATION ZERO — V0.5 audio / atmosphere on the balanced V0.4 baseline.
 ## Self-contained UI: no downloaded artwork, plugins, or fonts required.
 
 const SHIFT_SECONDS := 120.0
@@ -68,9 +68,14 @@ var breakers_tripped: Array[bool] = [false, false, false]
 var breaker_cooldowns: Array[float] = [0.0, 0.0, 0.0]
 var breaker_labels: Array[Label] = []
 var breaker_buttons: Array[Button] = []
+var station_audio: Node
+var audio_button: Button
 
 func _ready() -> void:
     rng.randomize()
+    station_audio = Node.new()
+    station_audio.set_script(load("res://scripts/station_audio.gd"))
+    add_child(station_audio)
     _build_ui()
     _add_log("NIGHT SHIFT INITIALIZED. ALL SYSTEMS NOMINAL.")
     _add_log("SHIFT POWER TO MATCH CHANGING DEMAND.")
@@ -135,6 +140,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
         KEY_D: _shift_power(2, -1)
         KEY_B: _toggle_battery()
         KEY_C: _acknowledge_alarm()
+        KEY_M: _toggle_audio()
         KEY_1: _reset_breaker(0)
         KEY_2: _reset_breaker(1)
         KEY_3: _reset_breaker(2)
@@ -166,6 +172,7 @@ func _shift_power(index: int, change: int) -> void:
         _refresh()
         return
     power[index] = updated
+    station_audio.effect("click")
     _add_log("%s ALLOCATION -> %d UNITS." % [SYSTEMS[index], updated])
     _refresh()
 
@@ -176,6 +183,7 @@ func _toggle_battery() -> void:
         _add_log("BATTERY IS EMPTY. REDUCE LOAD TO RECHARGE.")
         return
     battery_enabled = not battery_enabled
+    station_audio.effect("click")
     _add_log("BACKUP BUS %s." % ("CONNECTED" if battery_enabled else "DISCONNECTED"))
     _refresh()
 
@@ -201,6 +209,7 @@ func _trigger_event() -> void:
 
 func _trip_breaker(index: int) -> void:
     breakers_tripped[index] = true
+    station_audio.effect("breaker")
     breaker_cooldowns[index] = BREAKER_RESET_DELAY
     _add_log("FAULT: %s BREAKER TRIPPED. RESET WITH KEY %d AFTER COOLDOWN." % [SYSTEMS[index], index + 1])
 
@@ -213,11 +222,14 @@ func _reset_breaker(index: int) -> void:
         _add_log("BREAKER %d RESET BLOCKED: COOLING FOR %dS." % [index + 1, int(ceil(breaker_cooldowns[index]))])
     else:
         breakers_tripped[index] = false
+        station_audio.effect("success")
         _add_log("BREAKER %d RESET. %s POWER RESTORED." % [index + 1, SYSTEMS[index]])
     _refresh()
 
 func _finish(won: bool, reason: String) -> void:
     finished = true
+    station_audio.set_alarm(false)
+    station_audio.effect("success" if won else "critical")
     status_label.text = "SHIFT COMPLETE" if won else "STATION LOST"
     status_label.add_theme_color_override("font_color", GREEN if won else RED)
     _add_log(reason + " PRESS R TO RESTART.")
@@ -240,6 +252,7 @@ func _reset() -> void:
     breaker_cooldowns = [0.0, 0.0, 0.0]
     alarm_acknowledged = false
     alarm_signature = ""
+    station_audio.set_alarm(false)
     log_count = 0
     status_label.text = "ON DUTY"
     status_label.add_theme_color_override("font_color", GREEN)
@@ -284,6 +297,8 @@ func _acknowledge_alarm() -> void:
         return
     if not alarm_acknowledged:
         alarm_acknowledged = true
+        station_audio.set_alarm(false)
+        station_audio.effect("click")
         _add_log("OPERATOR ACKNOWLEDGED ACTIVE WARNING.")
     _refresh()
 
@@ -333,6 +348,8 @@ func _refresh() -> void:
         alarm_label.text = "▲  ACTIVE ALARM / " + warning
         alarm_label.add_theme_color_override("font_color", RED)
     alarm_button.disabled = warning == "" or alarm_acknowledged or finished
+    if station_audio != null:
+        station_audio.set_alarm(warning != "" and not alarm_acknowledged and not finished, warning == "CIRCUIT BREAKER TRIPPED" or warning == "MAIN BUS OVERLOAD")
     for i in range(3):
         power_labels[i].text = "%d / 3" % power[i]
         demand_labels[i].text = "DEMAND  %d UNITS" % demand[i]
@@ -460,6 +477,9 @@ func _build_ui() -> void:
     alarm_button = _button("ACKNOWLEDGE [C]")
     alarm_button.pressed.connect(_acknowledge_alarm)
     alarms.add_child(alarm_button)
+    audio_button = _button("SOUND ON [M]")
+    audio_button.pressed.connect(_toggle_audio)
+    alarms.add_child(audio_button)
 
     var power_row := _hbox(12)
     root.add_child(power_row)
@@ -583,10 +603,15 @@ func _build_ui() -> void:
     log_stack.add_child(log_label)
     var footer := _hbox()
     root.add_child(footer)
-    var help := _label("Q/A  LIFE    W/S  COOLING    E/D  COMMS    B  BACKUP    1/2/3  RESET CB    C  ACK    R  RESTART", 12, MUTED)
+    var help := _label("Q/A LIFE   W/S COOL   E/D COMMS   B BATTERY   1/2/3 BREAKERS   C ACK   M MUTE   R RESTART", 12, MUTED)
     help.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     footer.add_child(help)
     restart_button = _button("RESTART SHIFT")
     restart_button.visible = false
     restart_button.pressed.connect(_reset)
     footer.add_child(restart_button)
+
+func _toggle_audio() -> void:
+    var enabled_now: bool = station_audio.toggle_audio()
+    audio_button.text = "SOUND ON [M]" if enabled_now else "SOUND OFF [M]"
+    _add_log("AUDIO %s." % ("ENABLED" if enabled_now else "MUTED"))
