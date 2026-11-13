@@ -568,10 +568,11 @@ func _style_panel_accent(panel: PanelContainer, accent: Color) -> void:
     panel.add_theme_stylebox_override("panel", border_style)
 
 func _set_bar_accent(bar: ProgressBar, accent: Color) -> void:
-    var fill_style := StyleBoxFlat.new()
-    fill_style.bg_color = accent
-    fill_style.set_corner_radius_all(3)
-    bar.add_theme_stylebox_override("fill", fill_style)
+    # Progress bars already own a unique fill style from _bar().
+    # Update only when the color changes; do not allocate every frame.
+    var fill_style := bar.get_theme_stylebox("fill") as StyleBoxFlat
+    if fill_style != null and fill_style.bg_color != accent:
+        fill_style.bg_color = accent
 
 func _vbox(separation: int = 12) -> VBoxContainer:
     var v := VBoxContainer.new()
