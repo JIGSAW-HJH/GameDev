@@ -1,5 +1,5 @@
 extends Control
-## NIGHT SHIFT: STATION ZERO — V0.6 fullscreen menu, saves and controls on balanced V0.5 gameplay.
+## NIGHT SHIFT: STATION ZERO — V0.7 progressive shift campaign.
 ## Self-contained UI: no downloaded artwork, plugins, or fonts required.
 
 const SHIFT_SECONDS := 120.0
@@ -71,6 +71,14 @@ var breaker_buttons: Array[Button] = []
 var station_audio
 var audio_button: Button
 var game_menu
+var shift_number: int = 1
+var shift_duration: float = 90.0
+var maintenance_integrity: float = 100.0
+var maintenance_cooldown: float = 0.0
+var maintenance_label: Label
+var maintenance_button: Button
+var shift_label: Label
+var total_faults: int = 0
 
 func _ready() -> void:
     rng.randomize()
@@ -81,6 +89,8 @@ func _ready() -> void:
     game_menu = CanvasLayer.new()
     game_menu.set_script(load("res://scripts/game_menu.gd"))
     add_child(game_menu)
+    remaining = get_shift_duration()
+    shift_duration = remaining
     _add_log("NIGHT SHIFT INITIALIZED. ALL SYSTEMS NOMINAL.")
     _add_log("SHIFT POWER TO MATCH CHANGING DEMAND.")
     _add_log("BATTERY LASTS LONGER; FREE REACTOR UNITS TO RECHARGE.")
@@ -91,6 +101,13 @@ func _process(delta: float) -> void:
     if finished or (game_menu != null and game_menu.is_blocking()):
         return
     remaining = maxf(0.0, remaining - delta)
+    if shift_number >= 7:
+        maintenance_cooldown = maxf(0.0, maintenance_cooldown - delta)
+        maintenance_integrity = maxf(0.0, maintenance_integrity - delta * (0.15 + float(shift_number - 7) * 0.015))
+        if maintenance_integrity <= 0.0:
+            _finish(false, "AUXILIARY STABILISER FAILED.")
+            _refresh()
+            return
     event_timer -= delta
     if sag_timer > 0.0:
         sag_timer -= delta
@@ -98,7 +115,7 @@ func _process(delta: float) -> void:
             reactor_output = REACTOR_NOMINAL
             _add_log("REACTOR OUTPUT RESTORED TO 6 UNITS.")
     if event_timer <= 0.0:
-        event_timer += EVENT_INTERVAL
+        event_timer += get_event_interval()
         _trigger_event()
     for i in range(3):
         if breaker_cooldowns[i] > 0.0:
@@ -151,6 +168,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
         "breaker_2": _reset_breaker(1)
         "breaker_3": _reset_breaker(2)
         "mute": _toggle_audio()
+        "service": _service_auxiliary()
 
 func _total_power() -> int:
     var result := 0
@@ -194,9 +212,9 @@ func _trigger_event() -> void:
     demand[stressed] = 3
     # One trip at a time; no trip on the first demand event.
     # Alternating events keep faults recoverable and preserve a clear power puzzle.
-    if event_count % 2 == 0 and not breakers_tripped.has(true):
+    if shift_number >= 3 and event_count % 2 == 0 and not breakers_tripped.has(true):
         _trip_breaker(stressed)
-    if event_count % 3 == 0:
+    if shift_number >= 5 and event_count % 3 == 0:
         reactor_output = 5
         sag_timer = REACTOR_SAG_SECONDS
         _add_log("FAULT %02d: REACTOR DERATED TO 5 UNITS FOR 6 SECONDS." % event_count)
@@ -209,12 +227,13 @@ func _trigger_event() -> void:
 
 func _trip_breaker(index: int) -> void:
     breakers_tripped[index] = true
+    total_faults += 1
     station_audio.effect("breaker")
     breaker_cooldowns[index] = BREAKER_RESET_DELAY
     _add_log("FAULT: %s BREAKER TRIPPED. RESET WITH KEY %d AFTER COOLDOWN." % [SYSTEMS[index], index + 1])
 
 func _reset_breaker(index: int) -> void:
-    if finished or (game_menu != null and game_menu.is_blocking()):
+    if finished or shift_number < 3 or (game_menu != null and game_menu.is_blocking()):
         return
     if not breakers_tripped[index]:
         _add_log("BREAKER %d IS ALREADY CLOSED." % (index + 1))
@@ -232,15 +251,17 @@ func _finish(won: bool, reason: String) -> void:
     station_audio.effect("success" if won else "critical")
     status_label.text = "SHIFT COMPLETE" if won else "STATION LOST"
     status_label.add_theme_color_override("font_color", GREEN if won else RED)
-    _add_log(reason + " PRESS R TO RESTART.")
-    restart_button.visible = true
+    _add_log(reason)
+    restart_button.visible = false
+    game_menu.show_result(won, reason)
 
 func _reset() -> void:
     power = [2, 2, 2]
     demand = [2, 2, 2]
     integrity = [100.0, 100.0, 100.0]
-    remaining = SHIFT_SECONDS
-    event_timer = EVENT_INTERVAL
+    shift_duration = get_shift_duration()
+    remaining = shift_duration
+    event_timer = get_event_interval()
     reactor_output = REACTOR_NOMINAL
     sag_timer = 0.0
     battery_charge = 100.0
@@ -248,6 +269,9 @@ func _reset() -> void:
     finished = false
     event_count = 0
     log_lines.clear()
+    total_faults = 0
+    maintenance_integrity = 100.0
+    maintenance_cooldown = 0.0
     breakers_tripped = [false, false, false]
     breaker_cooldowns = [0.0, 0.0, 0.0]
     alarm_acknowledged = false
@@ -257,11 +281,11 @@ func _reset() -> void:
     status_label.text = "ON DUTY"
     status_label.add_theme_color_override("font_color", GREEN)
     restart_button.visible = false
-    _add_log("NEW SHIFT STARTED. ALL SYSTEMS NOMINAL.")
+    _add_log("SHIFT %d STARTED. %s." % [shift_number, get_shift_phase()])
     _refresh()
 
 func _add_log(message: String) -> void:
-    var elapsed: int = int(SHIFT_SECONDS - remaining)
+    var elapsed: int = int(shift_duration - remaining)
     var severity := "INFO"
     if "CRITICAL" in message or "FAILED" in message or "LOST" in message:
         severity = "CRIT"
@@ -305,6 +329,13 @@ func _acknowledge_alarm() -> void:
 func _refresh() -> void:
     var secs: int = int(ceil(remaining))
     clock_label.text = "%02d:%02d" % [int(secs / 60), secs % 60]
+    if shift_label != null:
+        shift_label.text = "SHIFT %02d  /  %s" % [shift_number, get_shift_phase()]
+    if maintenance_label != null:
+        maintenance_label.text = "AUX STABILISER  %d%%  •  %s" % [int(ceil(maintenance_integrity)), ("READY [T]" if maintenance_cooldown <= 0.0 else "REPAIR COOLDOWN %dS" % int(ceil(maintenance_cooldown)))] if shift_number >= 7 else "AUX STABILISER  /  UNLOCKS SHIFT 07"
+        maintenance_label.add_theme_color_override("font_color", RED if shift_number >= 7 and maintenance_integrity < 35.0 else CYAN)
+    if maintenance_button != null:
+        maintenance_button.disabled = shift_number < 7 or maintenance_cooldown > 0.0 or finished
     var allocated: int = _total_power()
     var capacity: int = _available_capacity()
     budget_label.text = "%d / %d UNITS ASSIGNED    •    %d FREE" % [allocated, capacity, maxi(0, capacity - allocated)]
@@ -324,7 +355,9 @@ func _refresh() -> void:
         bus_diagram.set("brownout", allocated > capacity)
         bus_diagram.set("breakers_tripped", breakers_tripped.duplicate())
     var warning := ""
-    if breakers_tripped.has(true):
+    if shift_number >= 7 and maintenance_integrity < 35.0:
+        warning = "AUXILIARY MAINTENANCE REQUIRED"
+    elif breakers_tripped.has(true):
         warning = "CIRCUIT BREAKER TRIPPED"
     elif allocated > capacity:
         warning = "MAIN BUS OVERLOAD"
@@ -367,7 +400,7 @@ func _refresh() -> void:
         else:
             breaker_labels[i].text = "CLOSED / HEALTHY"
         breaker_labels[i].add_theme_color_override("font_color", RED if breakers_tripped[i] else GREEN)
-        breaker_buttons[i].disabled = finished or not breakers_tripped[i] or breaker_cooldowns[i] > 0.0
+        breaker_buttons[i].disabled = finished or shift_number < 3 or not breakers_tripped[i] or breaker_cooldowns[i] > 0.0
         plus_buttons[i].disabled = finished or power[i] >= MAX_SYSTEM_POWER or allocated >= capacity
         minus_buttons[i].disabled = finished or power[i] <= 0
 
@@ -453,6 +486,8 @@ func _build_ui() -> void:
     header.add_child(head_left)
     head_left.add_child(_label("OS / 07    ·    ORBITAL ENGINEERING NETWORK    ·    SECURE OPERATOR TERMINAL", 12, CYAN))
     head_left.add_child(_label("NIGHT SHIFT   /   STATION ZERO", 29))
+    shift_label = _label("SHIFT 01 / POWER TRAINING", 14, CYAN)
+    head_left.add_child(shift_label)
     var head_right := _vbox(2)
     header.add_child(head_right)
     head_right.add_child(_label("TIME UNTIL SHIFT HANDOVER", 11, MUTED))
@@ -526,6 +561,14 @@ func _build_ui() -> void:
     bus_label = _label("", 12, MUTED)
     bus_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     bus_stack.add_child(bus_label)
+    var aux_row := _hbox(12)
+    bus_stack.add_child(aux_row)
+    maintenance_label = _label("AUX STABILISER  /  UNLOCKS SHIFT 07", 13, MUTED)
+    maintenance_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    aux_row.add_child(maintenance_label)
+    maintenance_button = _button("SERVICE AUX [T]")
+    maintenance_button.pressed.connect(_service_auxiliary)
+    aux_row.add_child(maintenance_button)
 
     var systems_row := _hbox(12)
     systems_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -620,7 +663,12 @@ func _toggle_audio() -> void:
 
 func get_save_data() -> Dictionary:
     return {
-        "version": 1,
+        "version": 2,
+        "shift_number": shift_number,
+        "shift_duration": shift_duration,
+        "maintenance_integrity": maintenance_integrity,
+        "maintenance_cooldown": maintenance_cooldown,
+        "total_faults": total_faults,
         "remaining": remaining,
         "event_timer": event_timer,
         "reactor_output": reactor_output,
@@ -639,7 +687,7 @@ func get_save_data() -> Dictionary:
     }
 
 func load_save_data(data: Dictionary) -> bool:
-    if int(data.get("version", -1)) != 1:
+    if int(data.get("version", -1)) not in [1, 2]:
         return false
     for name in ["power", "demand", "integrity", "breakers_tripped", "breaker_cooldowns", "log_lines"]:
         if not data.has(name) or typeof(data[name]) != TYPE_ARRAY:
@@ -647,8 +695,13 @@ func load_save_data(data: Dictionary) -> bool:
     for name in ["power", "demand", "integrity", "breakers_tripped", "breaker_cooldowns"]:
         if data[name].size() != 3:
             return false
-    remaining = clampf(float(data.get("remaining", SHIFT_SECONDS)), 0.1, SHIFT_SECONDS)
-    event_timer = clampf(float(data.get("event_timer", EVENT_INTERVAL)), 0.1, EVENT_INTERVAL)
+    shift_number = clampi(int(data.get("shift_number", 1)), 1, 99)
+    shift_duration = get_shift_duration()
+    maintenance_integrity = clampf(float(data.get("maintenance_integrity", 100.0)), 0.0, 100.0)
+    maintenance_cooldown = clampf(float(data.get("maintenance_cooldown", 0.0)), 0.0, 30.0)
+    total_faults = maxi(0, int(data.get("total_faults", 0)))
+    remaining = clampf(float(data.get("remaining", shift_duration)), 0.1, shift_duration)
+    event_timer = clampf(float(data.get("event_timer", get_event_interval())), 0.1, get_event_interval())
     reactor_output = clampi(int(data.get("reactor_output", REACTOR_NOMINAL)), 1, REACTOR_NOMINAL)
     sag_timer = clampf(float(data.get("sag_timer", 0.0)), 0.0, REACTOR_SAG_SECONDS)
     battery_charge = clampf(float(data.get("battery_charge", 100.0)), 0.0, 100.0)
@@ -680,3 +733,50 @@ func load_save_data(data: Dictionary) -> bool:
     _render_log()
     _refresh()
     return true
+
+func get_shift_duration() -> float:
+    if shift_number <= 2:
+        return 90.0
+    if shift_number <= 4:
+        return 105.0
+    if shift_number <= 6:
+        return 120.0
+    return minf(240.0, 135.0 + float(shift_number - 7) * 15.0)
+
+func get_event_interval() -> float:
+    if shift_number <= 2:
+        return 23.0
+    if shift_number <= 4:
+        return 19.0
+    if shift_number <= 6:
+        return 17.0
+    return maxf(13.0, 16.0 - float(shift_number - 7) * 0.5)
+
+func get_shift_phase() -> String:
+    if shift_number <= 2:
+        return "POWER TRAINING"
+    if shift_number <= 4:
+        return "BREAKER OPERATIONS"
+    if shift_number <= 6:
+        return "REACTOR STABILITY"
+    return "AUXILIARY OPERATIONS"
+
+func start_campaign() -> void:
+    shift_number = 1
+    _reset()
+
+func start_next_shift() -> void:
+    shift_number += 1
+    _reset()
+
+func retry_shift() -> void:
+    _reset()
+
+func _service_auxiliary() -> void:
+    if finished or shift_number < 7 or maintenance_cooldown > 0.0 or (game_menu != null and game_menu.is_blocking()):
+        return
+    maintenance_integrity = minf(100.0, maintenance_integrity + 45.0)
+    maintenance_cooldown = 16.0
+    station_audio.effect("success")
+    _add_log("AUXILIARY STABILISER SERVICED. INTEGRITY RECOVERED.")
+    _refresh()
