@@ -2,13 +2,21 @@
 
 **GitHub Game Off 2026** — theme **SHIFT**. Single-screen science-fiction engineering survival game built using **Godot 4.6**.
 
-**Current candidate: V1.0 — Advanced Emergency Operations** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
+**Current candidate: V1.1 — Live SCADA Main-Menu Attract Mode** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
 
 ## Running
 
 1. Open `project.godot` in Godot 4.6.
 2. Press **F5**. The game opens full-screen with the main menu.
 3. Select **New Campaign** to start at Shift 1, or load a saved campaign.
+
+## Animated main menu (V1.1)
+
+The main menu now displays a **procedurally animated, visual-only station-monitoring background**, behind a translucent dark focus layer and the existing clickable menu panel. It shows electrical power flows, moving system meters, reactor and atmospheric readings, sensor links, and an event-recorder feed. The simulation is deliberately fictional and independent of gameplay state: it **does not run the real campaign or modify saved data**. Its animation stops when the player enters gameplay.
+
+The **Esc pause menu and shift results** instead display the actual frozen control room behind a translucent dark tint; the fake SCADA background does not replace the real gameplay screen. No shaders, external artwork, audio files, or new plugins are needed.
+
+The attract-mode script is `scripts/menu_scada_bg.gd`. The title/pause presentation is controlled by `scripts/game_menu.gd`. This is a first visual pass with dimming and reduced contrast, **not a Gaussian blur shader**. It is designed to run with Godot 4.6's Compatibility renderer.
 
 ## Campaign
 
@@ -89,4 +97,4 @@ Key mappings can be changed in **Settings**. Esc is reserved.
 
 ## Testing status
 
-V1.0 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
+V1.1 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previous gameplay mechanics and the V1.0 save schema are unchanged. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
