@@ -95,7 +95,7 @@ func _set_background_mode(is_title_context: bool) -> void:
     attract_background.visible = is_title_context
     attract_background.set_process(is_title_context)
     attract_dimmer.visible = is_title_context
-    overlay.color = BG if is_title_context else Color(0.01, 0.02, 0.035, 0.89)
+    overlay.color = BG if is_title_context else Color(0.01, 0.02, 0.035, 0.77)
 
 func is_blocking() -> bool:
     return overlay.visible
