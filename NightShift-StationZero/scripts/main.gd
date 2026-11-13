@@ -70,7 +70,7 @@ var breaker_labels: Array[Label] = []
 var breaker_buttons: Array[Button] = []
 var station_audio
 var audio_button: Button
-var game_menu: CanvasLayer
+var game_menu
 
 func _ready() -> void:
     rng.randomize()
