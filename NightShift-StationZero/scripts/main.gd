@@ -294,8 +294,8 @@ func _add_log(message: String) -> void:
         severity = "WARN"
     var stamp := "%02d:%02d" % [int(elapsed / 60), elapsed % 60]
     log_lines.push_front("[%s] [%s] %s" % [stamp, severity, message])
-    if log_lines.size() > 6:
-        log_lines.resize(6)
+    if log_lines.size() > 150:
+        log_lines.resize(150)
     _render_log()
 
 func _render_log() -> void:
@@ -313,6 +313,8 @@ func _render_log() -> void:
         log_label.push_color(ink)
         log_label.add_text(entry + "\n")
         log_label.pop()
+    # Newest records are inserted first; keep the viewer anchored at the top.
+    log_label.scroll_to_line(0)
 
 func _acknowledge_alarm() -> void:
     if finished or (game_menu != null and game_menu.is_blocking()):
@@ -478,8 +480,16 @@ func _build_ui() -> void:
     for side in ["left", "right", "top", "bottom"]:
         margins.add_theme_constant_override("margin_" + side, 18)
     add_child(margins)
+    # The entire console can scroll if the monitor is shorter than our layout.
+    # The event recorder below has its own independent vertical scrollbar.
+    var page_scroll := ScrollContainer.new()
+    page_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    page_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    page_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    margins.add_child(page_scroll)
     var root := _vbox(9)
-    margins.add_child(root)
+    root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    page_scroll.add_child(root)
     var header := _hbox()
     root.add_child(header)
     var head_left := _vbox(2)
@@ -636,12 +646,14 @@ func _build_ui() -> void:
     root.add_child(log_panel)
     var log_stack := _vbox(5)
     log_panel.add_child(log_stack)
-    log_stack.add_child(_label("ENGINEERING EVENT RECORDER  /  LIVE SYSTEM LOG", 13, CYAN))
+    log_stack.add_child(_label("ENGINEERING EVENT RECORDER  /  NEWEST FIRST  /  SCROLL FOR HISTORY", 13, CYAN))
     log_label = RichTextLabel.new()
-    log_label.custom_minimum_size.y = 106
+    log_label.custom_minimum_size.y = 138
     log_label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
     log_label.bbcode_enabled = false
-    log_label.scroll_active = false
+    log_label.scroll_active = true
+    log_label.scroll_following = false
+    log_label.fit_content = false
     log_label.add_theme_font_size_override("normal_font_size", 13)
     log_label.add_theme_color_override("default_color", MUTED)
     log_stack.add_child(log_label)
@@ -721,7 +733,7 @@ func load_save_data(data: Dictionary) -> bool:
         breaker_cooldowns.append(clampf(float(data["breaker_cooldowns"][i]), 0.0, BREAKER_RESET_DELAY))
     log_lines.clear()
     for entry in data["log_lines"]:
-        if log_lines.size() >= 6:
+        if log_lines.size() >= 150:
             break
         log_lines.append(str(entry).substr(0, 200))
     alarm_acknowledged = bool(data.get("alarm_acknowledged", false))
