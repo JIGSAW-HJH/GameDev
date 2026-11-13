@@ -2,7 +2,7 @@
 
 **GitHub Game Off 2026** — theme **SHIFT**. Single-screen science-fiction engineering survival game built using **Godot 4.6**.
 
-**Current candidate: V0.7.1 — Scrollable Engineering Recorder** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
+**Current candidate: V0.8 — Reactor Thermal Controls** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
 
 ## Running
 
@@ -17,7 +17,8 @@
 | 1–2 | Easy power allocation training; no breaker trips or reactor sag | 90 s |
 | 3–4 | Circuit breakers trip; reset after cooldown | 105 s |
 | 5–6 | Temporary reduction in reactor output | 120 s |
-| 7+ | Auxiliary stabiliser maintenance added; gradually longer shifts | 135–240 s |
+| 7–8 | Auxiliary stabiliser maintenance | 135–150 s |
+| 9+ | Reactor thermal gauges, pump OFF/AUTO/BOOST; pump faults from Shift 10 | 165–240 s |
 
 Events become gradually more frequent, though the balanced V0.3.1 battery, recovery and integrity-damage rates are retained. This is an arcade simulation, not a real electrical model.
 
@@ -26,6 +27,12 @@ When you win, select **Start Next Shift**. After a loss select **Retry This Shif
 ## Event recorder and small-screen layout
 
 The engineering event recorder now has its own vertical scrollbar and retains up to 150 log entries. Newest messages appear first, and the viewer returns to the top whenever a new event is logged. The complete control-room page can also scroll on monitors where the whole interface does not fit vertically; this prevents the bottom controls from being clipped.
+
+## Thermal controls (V0.8)
+
+At Shift 9, the reactor temperature gauge and **P** pump control unlock. The pump defaults to **AUTO**, which normally provides enough cooling when the cooling subsystem receives its required electrical allocation. **BOOST** cools faster if temperature climbs; **OFF** is only safe briefly. A cooling-circuit breaker trip or inadequate power prevents the pump cooling effectively. Thermal warnings begin at 85°C, become critical at 105°C and the reactor shuts down at 130°C. Temporary pump faults begin at Shift 10. All numbers are game-balancing parameters rather than engineering calculations.
+
+Saves now record reactor temperature, pump mode and temporary outages (save schema V3); prior save versions remain readable.
 
 ## Menu and saves
 
@@ -47,6 +54,7 @@ The key mapping and audio volume preferences are saved independently using Godot
 | 1 / 2 / 3 | Reset respective breaker after cooldown (Shift 3+) |
 | T | Service auxiliary stabiliser when available (Shift 7+) |
 | M | Toggle audio |
+| P | Cycle cooling pump OFF / AUTO / BOOST (Shift 9+) |
 | Esc | Pause / back |
 
 Key mappings can be changed in **Settings**. Esc is reserved.
@@ -62,4 +70,4 @@ Key mappings can be changed in **Settings**. Esc is reserved.
 
 ## Testing status
 
-V0.7.1 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
+V0.8 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
