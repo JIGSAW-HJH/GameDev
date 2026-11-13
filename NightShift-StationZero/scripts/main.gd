@@ -25,6 +25,11 @@ const MUTED := Color("#8ba6b7")
 const GREEN := Color("#77e3ae")
 const AMBER := Color("#ffc56e")
 const RED := Color("#ff7187")
+const COOL_BLUE := Color("#69aafa")
+const LIFE_TEAL := Color("#72e2ad")
+const COMMS_VIOLET := Color("#bd97ff")
+const REACTOR_ORANGE := Color("#ffa96b")
+const BATTERY_GOLD := Color("#f4d374")
 
 var power: Array[int] = [2, 2, 2]
 var demand: Array[int] = [2, 2, 2]
@@ -458,8 +463,10 @@ func _refresh() -> void:
     budget_label.text = "%d / %d UNITS ASSIGNED    •    %d FREE" % [allocated, capacity, maxi(0, capacity - allocated)]
     reactor_label.text = "%d / 6 UNITS" % reactor_output
     reactor_bar.value = reactor_output
+    _set_bar_accent(reactor_bar, AMBER if reactor_output < REACTOR_NOMINAL else REACTOR_ORANGE)
     battery_label.text = "%d%% CHARGE" % int(ceil(battery_charge))
     battery_bar.value = battery_charge
+    _set_bar_accent(battery_bar, RED if battery_charge <= 20.0 else BATTERY_GOLD)
     battery_button.text = "DISCONNECT BACKUP [B]" if battery_enabled else "CONNECT BACKUP [B]"
     battery_button.disabled = finished or (battery_charge <= 0.0 and not battery_enabled)
     bus_label.text = "REACTOR  %dU   > > >   MAIN BUS  %dU   > > >   LOAD  %dU" % [reactor_output, capacity, allocated]
@@ -519,10 +526,11 @@ func _refresh() -> void:
         demand_labels[i].text = "DEMAND  %d UNITS" % demand[i]
         integrity_labels[i].text = "%d%%" % int(ceil(integrity[i]))
         integrity_bars[i].value = integrity[i]
+        _set_bar_accent(integrity_bars[i], RED if integrity[i] <= 30.0 else (AMBER if integrity[i] <= 60.0 else [LIFE_TEAL, COOL_BLUE, COMMS_VIOLET][i]))
         line_labels[i].text = "BUS %s  %dU" % [["A", "B", "C"][i], power[i]]
         var okay: bool = power[i] >= demand[i] and not breakers_tripped[i]
         demand_labels[i].add_theme_color_override("font_color", GREEN if okay else RED)
-        line_labels[i].add_theme_color_override("font_color", CYAN if okay else AMBER)
+        line_labels[i].add_theme_color_override("font_color", [LIFE_TEAL, COOL_BLUE, COMMS_VIOLET][i] if okay else AMBER)
         integrity_labels[i].add_theme_color_override("font_color", GREEN if integrity[i] > 60.0 else (AMBER if integrity[i] > 30.0 else RED))
         subsystem_leds[i].text = "●  BREAKER TRIPPED" if breakers_tripped[i] else ("●  NOMINAL" if okay else "●  UNDERSUPPLIED")
         subsystem_leds[i].add_theme_color_override("font_color", RED if breakers_tripped[i] else (GREEN if okay else AMBER))
@@ -552,6 +560,18 @@ func _panel(dark: bool = false) -> PanelContainer:
     style.set_content_margin_all(8)
     p.add_theme_stylebox_override("panel", style)
     return p
+
+func _style_panel_accent(panel: PanelContainer, accent: Color) -> void:
+    var border_style := panel.get_theme_stylebox("panel").duplicate() as StyleBoxFlat
+    border_style.border_color = accent.darkened(0.43)
+    border_style.set_border_width_all(2)
+    panel.add_theme_stylebox_override("panel", border_style)
+
+func _set_bar_accent(bar: ProgressBar, accent: Color) -> void:
+    var fill_style := StyleBoxFlat.new()
+    fill_style.bg_color = accent
+    fill_style.set_corner_radius_all(3)
+    bar.add_theme_stylebox_override("fill", fill_style)
 
 func _vbox(separation: int = 12) -> VBoxContainer:
     var v := VBoxContainer.new()
@@ -618,12 +638,13 @@ func _update_detail_tabs() -> void:
             break
     tab_alarm_flags = [bus_fault or power_fault, thermal_fault, atmospheric_fault, incident_fault, false]
     var names := ["BUS + AUX", "THERMAL", "ATMOSPHERE", "INCIDENTS", "EVENT LOG"]
+    var tab_accents := [CYAN, REACTOR_ORANGE, LIFE_TEAL, AMBER, COMMS_VIOLET]
     for i in range(5):
         var attention: bool = tab_alarm_flags[i]
         var blink: bool = fposmod(tab_flash_clock, 1.0) < 0.5
         var prefix: String = "▲ " if attention and blink else ("! " if attention else "")
         detail_buttons[i].text = prefix + names[i]
-        detail_buttons[i].add_theme_color_override("font_color", RED if attention and blink else (CYAN if i == active_detail_tab else TEXT))
+        detail_buttons[i].add_theme_color_override("font_color", RED if attention and blink else (tab_accents[i] if i == active_detail_tab else MUTED))
         detail_buttons[i].button_pressed = i == active_detail_tab
 
 func _build_ui() -> void:
@@ -683,22 +704,25 @@ func _build_ui() -> void:
     root.add_child(power_row)
     var reactor_panel := _panel()
     reactor_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _style_panel_accent(reactor_panel, REACTOR_ORANGE)
     power_row.add_child(reactor_panel)
     var reactor_stack := _vbox(8)
     reactor_panel.add_child(reactor_stack)
-    reactor_stack.add_child(_label("01   PRIMARY REACTOR", 15, CYAN))
+    reactor_stack.add_child(_label("01   PRIMARY REACTOR", 15, REACTOR_ORANGE))
     reactor_label = _label("6 / 6 UNITS", 20)
     reactor_stack.add_child(reactor_label)
     reactor_bar = _bar(6.0, 6.0)
     reactor_stack.add_child(reactor_bar)
+    _set_bar_accent(reactor_bar, REACTOR_ORANGE)
     reactor_stack.add_child(_label("FAULT EVENTS CAN REDUCE AVAILABLE OUTPUT", 11, MUTED))
 
     var battery_panel := _panel()
     battery_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _style_panel_accent(battery_panel, BATTERY_GOLD)
     power_row.add_child(battery_panel)
     var battery_stack := _vbox(7)
     battery_panel.add_child(battery_stack)
-    battery_stack.add_child(_label("02   EMERGENCY BATTERY", 15, CYAN))
+    battery_stack.add_child(_label("02   EMERGENCY BATTERY", 15, BATTERY_GOLD))
     var battery_row := _hbox()
     battery_stack.add_child(battery_row)
     battery_label = _label("100% CHARGE", 20)
@@ -709,22 +733,25 @@ func _build_ui() -> void:
     battery_row.add_child(battery_button)
     battery_bar = _bar(100.0, 100.0)
     battery_stack.add_child(battery_bar)
+    _set_bar_accent(battery_bar, BATTERY_GOLD)
     battery_stack.add_child(_label("+2 BUS UNITS WHEN ENABLED  /  DRAINS ONLY WHEN NEEDED  /  FREE REACTOR CAPACITY TO RECHARGE", 11, MUTED))
 
     var systems_row := _hbox(12)
     systems_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
     root.add_child(systems_row)
+    var system_accents := [LIFE_TEAL, COOL_BLUE, COMMS_VIOLET]
     for i in range(3):
         var p := _panel()
+        _style_panel_accent(p, system_accents[i])
         p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         systems_row.add_child(p)
         var stack := _vbox(5)
         p.add_child(stack)
-        stack.add_child(_label("0%d   %s" % [i + 4, SYSTEMS[i]], 15, CYAN))
+        stack.add_child(_label("0%d   %s" % [i + 4, SYSTEMS[i]], 15, system_accents[i]))
         var led := _label("●  NOMINAL", 12, GREEN)
         stack.add_child(led)
         subsystem_leds.append(led)
-        var line := _label("BUS %s  2U" % ['A', 'B', 'C'][i], 13, CYAN)
+        var line := _label("BUS %s  2U" % ['A', 'B', 'C'][i], 13, system_accents[i])
         stack.add_child(line)
         line_labels.append(line)
         var health_row := _hbox()
@@ -737,6 +764,7 @@ func _build_ui() -> void:
         integrity_labels.append(health)
         var bar := _bar(100.0, 100.0)
         stack.add_child(bar)
+        _set_bar_accent(bar, system_accents[i])
         integrity_bars.append(bar)
         var request := _label("DEMAND  2 UNITS", 16, GREEN)
         stack.add_child(request)
@@ -785,7 +813,7 @@ func _build_ui() -> void:
         detail_buttons.append(tab)
     var detail_host := Control.new()
     detail_host.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    detail_host.custom_minimum_size.y = 146.0
+    detail_host.custom_minimum_size.y = 214.0
     root.add_child(detail_host)
     for i in range(5):
         var page := VBoxContainer.new()
@@ -796,12 +824,13 @@ func _build_ui() -> void:
         page.visible = i == 0
     var bus_panel := _panel(true)
     detail_pages[0].add_child(bus_panel)
+    _style_panel_accent(bus_panel, CYAN)
     var bus_stack := _vbox(4)
     bus_panel.add_child(bus_stack)
     bus_stack.add_child(_label("03   HIGH-VOLTAGE DISTRIBUTION  /  LIVE SINGLE-LINE DIAGRAM", 12, CYAN))
     bus_diagram = Control.new()
     bus_diagram.set_script(load("res://scripts/bus_diagram.gd"))
-    bus_diagram.custom_minimum_size = Vector2(0, 70)
+    bus_diagram.custom_minimum_size = Vector2(0, 153)
     bus_diagram.mouse_filter = Control.MOUSE_FILTER_IGNORE
     bus_stack.add_child(bus_diagram)
     bus_label = _label("", 12, MUTED)
@@ -818,11 +847,12 @@ func _build_ui() -> void:
 
     var thermal_panel := _panel(true)
     detail_pages[1].add_child(thermal_panel)
+    _style_panel_accent(thermal_panel, REACTOR_ORANGE)
     var thermal_stack := _vbox(5)
     thermal_panel.add_child(thermal_stack)
     var thermal_row := _hbox(12)
     thermal_stack.add_child(thermal_row)
-    temperature_label = _label("REACTOR THERMAL CONTROLS  /  UNLOCK SHIFT 09", 14, CYAN)
+    temperature_label = _label("REACTOR THERMAL CONTROLS  /  UNLOCK SHIFT 09", 14, REACTOR_ORANGE)
     temperature_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     thermal_row.add_child(temperature_label)
     cooling_pump_button = _button("PUMP LOCKED")
@@ -830,14 +860,16 @@ func _build_ui() -> void:
     thermal_row.add_child(cooling_pump_button)
     temperature_bar = _bar(130.0, reactor_temp_c)
     thermal_stack.add_child(temperature_bar)
+    _set_bar_accent(temperature_bar, REACTOR_ORANGE)
     cooling_tip_label = _label("AUTO / BOOST COOLING CONTROL UNLOCKS AT SHIFT 09", 11, MUTED)
     thermal_stack.add_child(cooling_tip_label)
 
     var atmosphere_panel := _panel(true)
     detail_pages[2].add_child(atmosphere_panel)
+    _style_panel_accent(atmosphere_panel, LIFE_TEAL)
     var atmosphere_stack := _vbox(6)
     atmosphere_panel.add_child(atmosphere_stack)
-    atmosphere_stack.add_child(_label("08   ATMOSPHERIC SYSTEMS / LIFE SUPPORT CONTROL", 13, CYAN))
+    atmosphere_stack.add_child(_label("08   ATMOSPHERIC SYSTEMS / LIFE SUPPORT CONTROL", 13, LIFE_TEAL))
     var atmosphere_top := _hbox(12)
     atmosphere_stack.add_child(atmosphere_top)
     oxygen_label = _label("OXYGEN GENERATOR / UNLOCKS SHIFT 11", 14, CYAN)
@@ -848,6 +880,7 @@ func _build_ui() -> void:
     atmosphere_top.add_child(oxygen_mode_button)
     oxygen_bar = _bar(100.0, 96.0)
     atmosphere_stack.add_child(oxygen_bar)
+    _set_bar_accent(oxygen_bar, LIFE_TEAL)
     var atmosphere_bottom := _hbox(12)
     atmosphere_stack.add_child(atmosphere_bottom)
     pressure_label = _label("PRESSURE MONITOR / UNLOCKS SHIFT 11", 14, CYAN)
@@ -858,11 +891,13 @@ func _build_ui() -> void:
     atmosphere_bottom.add_child(seal_button)
     pressure_bar = _bar(110.0, 101.0)
     atmosphere_stack.add_child(pressure_bar)
+    _set_bar_accent(pressure_bar, COOL_BLUE)
     atmosphere_hint = _label("ATMOSPHERIC SYSTEMS UNLOCK AT SHIFT 11", 11, MUTED)
     atmosphere_stack.add_child(atmosphere_hint)
 
     var incident_panel := _panel(true)
     detail_pages[3].add_child(incident_panel)
+    _style_panel_accent(incident_panel, AMBER)
     var incident_stack := _vbox(6)
     incident_panel.add_child(incident_stack)
     var incident_row := _hbox(10)
@@ -875,10 +910,12 @@ func _build_ui() -> void:
     incident_row.add_child(incident_button)
     incident_progress = _bar(18.0, 0.0)
     incident_stack.add_child(incident_progress)
+    _set_bar_accent(incident_progress, AMBER)
     incident_stack.add_child(_label("SHIFT 13+: ISOLATE MULTI-SYSTEM INCIDENTS WITH [J] BEFORE THEY ESCALATE.", 11, MUTED))
 
     var log_panel := _panel(true)
     detail_pages[4].add_child(log_panel)
+    _style_panel_accent(log_panel, COMMS_VIOLET)
     var log_stack := _vbox(5)
     log_panel.add_child(log_stack)
     log_stack.add_child(_label("ENGINEERING EVENT RECORDER  /  LATEST EVENTS  /  NO SCROLL", 13, CYAN))
