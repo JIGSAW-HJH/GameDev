@@ -541,7 +541,10 @@ func _start_new() -> void:
     resume_game()
 
 func _return_to_title() -> void:
-    show_title()
+    if in_session and not game.finished:
+        _confirm("Return to Main Menu?", "Unsaved progress will be lost unless you save it first.", show_title)
+    else:
+        show_title()
 
 func resume_game() -> void:
     if game.finished:
