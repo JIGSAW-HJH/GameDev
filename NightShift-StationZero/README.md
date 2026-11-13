@@ -2,7 +2,7 @@
 
 **GitHub Game Off 2026** — theme **SHIFT**. Single-screen science-fiction engineering survival game built using **Godot 4.6**.
 
-**Current candidate: V0.8 — Reactor Thermal Controls** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
+**Current candidate: V0.9 — Life Support & Atmosphere** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
 
 ## Running
 
@@ -18,7 +18,8 @@
 | 3–4 | Circuit breakers trip; reset after cooldown | 105 s |
 | 5–6 | Temporary reduction in reactor output | 120 s |
 | 7–8 | Auxiliary stabiliser maintenance | 135–150 s |
-| 9+ | Reactor thermal gauges, pump OFF/AUTO/BOOST; pump faults from Shift 10 | 165–240 s |
+| 9–10 | Reactor thermal gauges, pump OFF/AUTO/BOOST; pump faults from Shift 10 | 165–180 s |
+| 11+ | Oxygen generation and pressure; cabin leaks from Shift 12 | 195–240 s |
 
 Events become gradually more frequent, though the balanced V0.3.1 battery, recovery and integrity-damage rates are retained. This is an arcade simulation, not a real electrical model.
 
@@ -33,6 +34,14 @@ The engineering event recorder now has its own vertical scrollbar and retains up
 At Shift 9, the reactor temperature gauge and **P** pump control unlock. The pump defaults to **AUTO**, which normally provides enough cooling when the cooling subsystem receives its required electrical allocation. **BOOST** cools faster if temperature climbs; **OFF** is only safe briefly. A cooling-circuit breaker trip or inadequate power prevents the pump cooling effectively. Thermal warnings begin at 85°C, become critical at 105°C and the reactor shuts down at 130°C. Temporary pump faults begin at Shift 10. All numbers are game-balancing parameters rather than engineering calculations.
 
 Saves now record reactor temperature, pump mode and temporary outages (save schema V3); prior save versions remain readable.
+
+## Atmospheric controls (V0.9)
+
+At Shift 11, oxygen reserves and cabin pressure become active. The **G** key cycles oxygen generation OFF / AUTO / BOOST. The generator requires the life-support circuit to be powered sufficiently; AUTO is designed to maintain normal conditions with adequate power and BOOST can rebuild oxygen reserves faster. At Shift 12, temporary leaks can depressurise the habitat: press **H** to engage the emergency cabin seal. Leaks also self-contain after a short period, giving the player recovery opportunities.
+
+Warnings occur at oxygen 50% / pressure 80 kPa, with critical alerts at 25% / 65 kPa; a shift fails if oxygen reaches 0% or pressure reaches 50 kPa. All rates and thresholds are fictional game-balance values, not crew-life-support engineering specifications.
+
+Saves now include oxygen, pressure, generator mode and leak/seal cooldown timers (save schema V4). Existing V1–V3 saves remain readable.
 
 ## Menu and saves
 
@@ -55,6 +64,8 @@ The key mapping and audio volume preferences are saved independently using Godot
 | T | Service auxiliary stabiliser when available (Shift 7+) |
 | M | Toggle audio |
 | P | Cycle cooling pump OFF / AUTO / BOOST (Shift 9+) |
+| G | Cycle oxygen generator OFF / AUTO / BOOST (Shift 11+) |
+| H | Seal a cabin pressure leak (Shift 12+) |
 | Esc | Pause / back |
 
 Key mappings can be changed in **Settings**. Esc is reserved.
@@ -70,4 +81,4 @@ Key mappings can be changed in **Settings**. Esc is reserved.
 
 ## Testing status
 
-V0.8 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
+V0.9 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
