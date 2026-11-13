@@ -1,52 +1,61 @@
 # NIGHT SHIFT: STATION ZERO
 
-**GitHub Game Off 2026** — theme **SHIFT**. Single-screen, SCADA-inspired sci-fi engineering survival game built with **Godot 4.6**.
+**GitHub Game Off 2026** — theme **SHIFT**. Single-screen science-fiction engineering survival game built using **Godot 4.6**.
 
-**Current development:** V0.6 menu, saving and settings, layered onto the tested V0.5 gameplay. V0.6 still needs an in-editor playtest.
+**Current candidate: V0.7 — Progressive Shift Campaign** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
 
-## Start
+## Running
 
-1. Import `project.godot` using the standard Godot 4.6 editor.
-2. Press **F5**. The game starts in full-screen at its **Main Menu**.
-3. Choose **New Shift** to play, or **Continue Saved Shift** if you previously saved.
+1. Open `project.godot` in Godot 4.6.
+2. Press **F5**. The game opens full-screen with the main menu.
+3. Select **New Campaign** to start at Shift 1, or load a saved campaign.
 
-## Menus
+## Campaign
 
-- **Main Menu:** New Shift, Continue Saved Shift, Settings, Exit Game.
-- **Esc during gameplay:** Pause menu: Resume, Save, Load, New Shift, Settings, Main Menu, Exit.
-- **Settings:** Master, ambience, effects and alarm volume; mute audio; remap gameplay keys; restore default controls.
-- Esc is reserved for pause/back, and duplicate key assignments are prevented.
-- Changing settings automatically stores them for future launches.
+| Shift | Mechanic added | Approx. shift duration |
+| --- | --- | --- |
+| 1–2 | Easy power allocation training; no breaker trips or reactor sag | 90 s |
+| 3–4 | Circuit breakers trip; reset after cooldown | 105 s |
+| 5–6 | Temporary reduction in reactor output | 120 s |
+| 7+ | Auxiliary stabiliser maintenance added; gradually longer shifts | 135–240 s |
+
+Events become gradually more frequent, though the balanced V0.3.1 battery, recovery and integrity-damage rates are retained. This is an arcade simulation, not a real electrical model.
+
+When you win, select **Start Next Shift**. After a loss select **Retry This Shift**. The result screen reports number of events, breaker trips, remaining battery and mean integrity.
+
+## Menu and saves
+
+The main menu offers New Campaign, Continue / Load Game, How to Play, Settings, Credits and Exit. In game, **Esc** opens a pause menu with Resume, Save, Load, Settings, How to Play and exit/navigation options.
+
+There are **three local manual save slots**, stored in Godot's `user://` directory. A save stores shift number, power allocation, timer, reactor and battery status, integrity, breaker state, and the auxiliary maintenance state. Saving after winning creates a checkpoint at the start of the next shift. Loading legacy V0.6 `station_zero_save.json` saves is also supported.
+
+The key mapping and audio volume preferences are saved independently using Godot's local ConfigFile.
 
 ## Default keys
 
-| Keys | Action |
+| Key | Action |
 | --- | --- |
-| Q / A | Life-support power up / down |
-| W / S | Cooling power up / down |
-| E / D | Communications power up / down |
-| B | Connect / disconnect battery |
-| C | Acknowledge alarm |
-| 1 / 2 / 3 | Reset corresponding breaker after cooldown |
-| M | Toggle game sound |
+| Q / A | Increase / decrease life-support allocation |
+| W / S | Increase / decrease cooling allocation |
+| E / D | Increase / decrease communications allocation |
+| B | Connect / disconnect backup battery |
+| C | Acknowledge current alarm |
+| 1 / 2 / 3 | Reset respective breaker after cooldown (Shift 3+) |
+| T | Service auxiliary stabiliser when available (Shift 7+) |
+| M | Toggle audio |
 | Esc | Pause / back |
 
-## Save files
+Key mappings can be changed in **Settings**. Esc is reserved.
 
-A single manual save slot stores the running shift's remaining time, demands, reactor state, battery, integrity, breaker cooldowns and event log. To save, press **Esc → Save Shift**. On the next launch, use **Continue Saved Shift**.
+## License and credits
 
-Saves and settings are stored locally in Godot's `user://` directory, not in this repository. The game does not automatically save or upload these files. A finished or failed shift is not eligible for saving.
+- [MIT License](LICENSE) for original source code
+- [All rights reserved](ASSET-LICENSE.md) for original creative game assets
+- Third-party assets retain their own licenses, and must be attributed when used
+- Game creator: JIGSAW-HJH
+- Godot Engine by its contributors
+- AI assistance: OpenAI ChatGPT assisted with game design, coding and technical development; this should be disclosed when submitting to the jam.
 
-## Development notes
+## Testing status
 
-The battery and integrity balancing remain unchanged from the successful V0.3.1 playtest. Audio is procedurally generated in GDScript with no third-party sound files.
-
-## Licensing
-
-- [MIT License](LICENSE) — source code
-- [All Rights Reserved](ASSET-LICENSE.md) — original creative assets
-- Third-party assets, if any are added, retain their original licenses.
-
-AI tools were used to assist development and will be disclosed in the game-jam submission.
-
-**Testing status:** The code is committed but V0.6 has not been executed in Godot by the assistant. Keep a local backup of the tested V0.5 version.
+V0.7 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
