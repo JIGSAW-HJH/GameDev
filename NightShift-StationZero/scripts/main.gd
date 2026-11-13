@@ -91,6 +91,7 @@ func _ready() -> void:
     add_child(game_menu)
     remaining = get_shift_duration()
     shift_duration = remaining
+    event_timer = get_event_interval()
     _add_log("NIGHT SHIFT INITIALIZED. ALL SYSTEMS NOMINAL.")
     _add_log("SHIFT POWER TO MATCH CHANGING DEMAND.")
     _add_log("BATTERY LASTS LONGER; FREE REACTOR UNITS TO RECHARGE.")
