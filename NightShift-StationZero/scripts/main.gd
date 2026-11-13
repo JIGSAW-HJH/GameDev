@@ -94,7 +94,7 @@ func _ready() -> void:
     _add_log("NIGHT SHIFT INITIALIZED. ALL SYSTEMS NOMINAL.")
     _add_log("SHIFT POWER TO MATCH CHANGING DEMAND.")
     _add_log("BATTERY LASTS LONGER; FREE REACTOR UNITS TO RECHARGE.")
-    _add_log("BREAKER FAULTS: WAIT 3S, THEN RESET WITH 1 / 2 / 3.")
+    _add_log("PROGRESSION: SHIFT 3 BREAKERS / SHIFT 5 REACTOR / SHIFT 7 AUXILIARY.")
     _refresh()
 
 func _process(delta: float) -> void:
@@ -103,7 +103,7 @@ func _process(delta: float) -> void:
     remaining = maxf(0.0, remaining - delta)
     if shift_number >= 7:
         maintenance_cooldown = maxf(0.0, maintenance_cooldown - delta)
-        maintenance_integrity = maxf(0.0, maintenance_integrity - delta * (0.15 + float(shift_number - 7) * 0.015))
+        maintenance_integrity = maxf(0.0, maintenance_integrity - delta * (0.85 + float(shift_number - 7) * 0.07))
         if maintenance_integrity <= 0.0:
             _finish(false, "AUXILIARY STABILISER FAILED.")
             _refresh()
