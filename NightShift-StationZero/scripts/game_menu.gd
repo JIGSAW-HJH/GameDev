@@ -1,18 +1,19 @@
 extends CanvasLayer
 ## V0.6: front-end, pause menu, persistent saves and settings.
 signal menu_closed
-const SAVE_PATH := "user://station_zero_save.json"
+const SAVE_PATH := "user://station_zero_save.json" # Legacy V0.6 save, still readable
+const SAVE_PREFIX := "user://station_zero_slot_%d.json"
 const SETTINGS_PATH := "user://station_zero_settings.cfg"
 const ACTIONS := [
     "life_up", "life_down", "cool_up", "cool_down", "comms_up", "comms_down",
-    "battery", "ack", "breaker_1", "breaker_2", "breaker_3", "mute"
+    "battery", "ack", "breaker_1", "breaker_2", "breaker_3", "mute", "service"
 ]
 const ACTION_LABELS := [
     "Life support +", "Life support -", "Cooling +", "Cooling -",
     "Communications +", "Communications -", "Toggle battery", "Acknowledge alarm",
-    "Reset breaker 1", "Reset breaker 2", "Reset breaker 3", "Mute audio"
+    "Reset breaker 1", "Reset breaker 2", "Reset breaker 3", "Mute audio", "Service auxiliary"
 ]
-const DEFAULT_KEYS := [KEY_Q, KEY_A, KEY_W, KEY_S, KEY_E, KEY_D, KEY_B, KEY_C, KEY_1, KEY_2, KEY_3, KEY_M]
+const DEFAULT_KEYS := [KEY_Q, KEY_A, KEY_W, KEY_S, KEY_E, KEY_D, KEY_B, KEY_C, KEY_1, KEY_2, KEY_3, KEY_M, KEY_T]
 const CYAN := Color("#65e2e8")
 const WHITE := Color("#e7f3f7")
 const MUTED := Color("#8ba6b7")
@@ -33,6 +34,8 @@ var effects_volume := 0.85
 var alarm_volume := 0.85
 var show_audio := true
 var status_message := ""
+var slots_return := "title"
+var result_won := false
 var confirm_dialog: ConfirmationDialog
 
 func _ready() -> void:
@@ -105,6 +108,12 @@ func _input(event: InputEvent) -> void:
         get_viewport().set_input_as_handled()
         if current_page == "settings":
             _settings_back()
+        elif current_page == "slots":
+            _slots_back()
+        elif current_page == "howto" or current_page == "credits":
+            _info_back()
+        elif current_page == "result":
+            show_title()
         elif in_session and overlay.visible:
             resume_game()
         elif in_session:
@@ -156,27 +165,216 @@ func show_title() -> void:
     overlay.show()
     _clear()
     _heading("GITHUB GAME OFF 2026  •  SHIFT")
-    _button("NEW SHIFT", _new_game_request)
-    var continue_button := _button("CONTINUE SAVED SHIFT", _continue_game)
-    continue_button.disabled = not FileAccess.file_exists(SAVE_PATH)
+    _button("NEW CAMPAIGN", _new_game_request)
+    var has_save := FileAccess.file_exists(SAVE_PATH)
+    for i in range(1, 4):
+        has_save = has_save or FileAccess.file_exists(SAVE_PREFIX % i)
+    _button("CONTINUE / LOAD GAME", _show_load_slots).disabled = not has_save
+    _button("HOW TO PLAY", show_howto)
     _button("SETTINGS", show_settings)
+    _button("CREDITS", show_credits)
     _button("EXIT GAME", _exit_game)
     _notice()
 
 func show_pause() -> void:
+    if game.finished:
+        show_result(result_won, "SHIFT ENDED")
+        return
     current_page = "pause"
     overlay.show()
     game.station_audio.set_alarm(false)
     _clear()
-    _heading("SHIFT PAUSED  //  OPERATIONS SUSPENDED")
+    _heading("SHIFT %02d PAUSED  //  OPERATIONS SUSPENDED" % game.shift_number)
     _button("RESUME SHIFT", resume_game)
-    _button("SAVE SHIFT", _save_game)
-    _button("LOAD SAVED SHIFT", _load_request).disabled = not FileAccess.file_exists(SAVE_PATH)
-    _button("NEW SHIFT", _new_game_request)
+    _button("SAVE GAME", _show_save_slots)
+    _button("LOAD GAME", _show_load_slots)
+    _button("HOW TO PLAY", show_howto)
     _button("SETTINGS", show_settings)
+    _button("NEW CAMPAIGN", _new_game_request)
     _button("RETURN TO MAIN MENU", _return_to_title)
     _button("EXIT GAME", _exit_game)
     _notice()
+
+func show_result(won: bool, reason: String) -> void:
+    result_won = won
+    in_session = true
+    current_page = "result"
+    overlay.show()
+    game.station_audio.set_alarm(false)
+    _clear()
+    _heading("SHIFT %02d  /  %s" % [game.shift_number, "COMPLETE" if won else "STATION LOST"])
+    content.add_child(_label(reason, 19, CYAN if won else Color("#ff7187")))
+    content.add_child(_label("Duration: %ds   •   Emergencies: %d   •   Breaker trips: %d" % [int(game.shift_duration), game.event_count, game.total_faults], 15, WHITE))
+    content.add_child(_label("Battery remaining: %d%%   •   Average subsystem integrity: %d%%" % [int(game.battery_charge), int((game.integrity[0] + game.integrity[1] + game.integrity[2]) / 3.0)], 15, MUTED))
+    if won:
+        content.add_child(_label("UP NEXT: SHIFT %02d  /  %s" % [game.shift_number + 1, _next_phase()], 16, CYAN))
+        _button("START NEXT SHIFT", _start_next_shift)
+    else:
+        _button("RETRY THIS SHIFT", _retry_shift)
+    _button("SAVE CAMPAIGN TO SLOT", _show_save_slots)
+    _button("HOW TO PLAY", show_howto)
+    _button("MAIN MENU", show_title)
+    _button("EXIT GAME", _exit_game)
+
+func _next_phase() -> String:
+    var next_num: int = game.shift_number + 1
+    if next_num <= 2:
+        return "POWER TRAINING"
+    if next_num <= 4:
+        return "BREAKER OPERATIONS"
+    if next_num <= 6:
+        return "REACTOR STABILITY"
+    return "AUXILIARY OPERATIONS"
+
+func _start_next_shift() -> void:
+    game.start_next_shift()
+    resume_game()
+
+func _retry_shift() -> void:
+    game.retry_shift()
+    resume_game()
+
+func _show_save_slots() -> void:
+    slots_return = current_page
+    _show_slots(true)
+
+func _show_load_slots() -> void:
+    slots_return = current_page
+    _show_slots(false)
+
+func _show_slots(saving: bool) -> void:
+    current_page = "slots"
+    overlay.show()
+    _clear()
+    _heading("SAVE SLOTS  //  %s" % ("SELECT DESTINATION" if saving else "SELECT SAVED SHIFT"))
+    for i in range(1, 4):
+        var path: String = SAVE_PREFIX % i
+        var exists := FileAccess.file_exists(path)
+        var desc := "SLOT %d  /  EMPTY" % i
+        if exists:
+            var data := _read_slot(i)
+            desc = "SLOT %d  /  SHIFT %02d" % [i, int(data.get("shift_number", 1))]
+        var btn := _button(desc + ("  •  OVERWRITE" if saving and exists else ""), _save_to_slot.bind(i) if saving else _load_from_slot.bind(i))
+        btn.disabled = not saving and not exists
+    if not saving and FileAccess.file_exists(SAVE_PATH):
+        _button("LEGACY V0.6 SAVE", _load_legacy_save)
+    _button("BACK", _slots_back)
+    _notice()
+
+func _slots_back() -> void:
+    if slots_return == "pause":
+        show_pause()
+    elif slots_return == "result":
+        show_result(result_won, "SHIFT COMPLETE" if result_won else "STATION LOST")
+    else:
+        show_title()
+
+func _save_to_slot(slot: int) -> void:
+    var path: String = SAVE_PREFIX % slot
+    if FileAccess.file_exists(path):
+        _confirm("Overwrite Save Slot %d?" % slot, "The previous save will be replaced.", _write_slot.bind(slot))
+    else:
+        _write_slot(slot)
+
+func _write_slot(slot: int) -> void:
+    var file := FileAccess.open(SAVE_PREFIX % slot, FileAccess.WRITE)
+    if file == null:
+        status_message = "Could not save slot %d." % slot
+        _show_slots(true)
+        return
+    var data: Dictionary = game.get_save_data()
+    if game.finished and result_won:
+        data["shift_number"] = game.shift_number + 1
+        data["remaining"] = -1.0
+    elif game.finished:
+        data["remaining"] = -1.0
+    file.store_string(JSON.stringify(data, "\t"))
+    file.close()
+    status_message = "Saved to slot %d." % slot
+    _show_slots(true)
+
+func _read_slot(slot: int) -> Dictionary:
+    var file := FileAccess.open(SAVE_PREFIX % slot, FileAccess.READ)
+    if file == null:
+        return {}
+    var parsed: Variant = JSON.parse_string(file.get_as_text())
+    file.close()
+    if typeof(parsed) == TYPE_DICTIONARY:
+        return parsed
+    return {}
+
+func _load_from_slot(slot: int) -> void:
+    var data: Dictionary = _read_slot(slot)
+    if data.is_empty():
+        status_message = "Save slot %d could not be read." % slot
+        _show_slots(false)
+        return
+    if in_session and not game.finished:
+        _confirm("Load Save Slot %d?" % slot, "Unsaved progress will be replaced.", _apply_loaded.bind(data))
+    else:
+        _apply_loaded(data)
+
+func _load_legacy_save() -> void:
+    var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+    if file == null:
+        status_message = "Legacy save could not be read."
+        _show_slots(false)
+        return
+    var parsed: Variant = JSON.parse_string(file.get_as_text())
+    file.close()
+    if typeof(parsed) != TYPE_DICTIONARY:
+        status_message = "Invalid legacy save."
+        _show_slots(false)
+        return
+    _apply_loaded(parsed)
+
+func _apply_loaded(data: Dictionary) -> void:
+    # A completed shift is stored as a checkpoint for the next shift.
+    if float(data.get("remaining", 0.0)) < 0.0:
+        game.shift_number = clampi(int(data.get("shift_number", 1)), 1, 99)
+        game._reset()
+    elif not game.load_save_data(data):
+        status_message = "Invalid or unsupported save file."
+        _show_slots(false)
+        return
+    in_session = true
+    resume_game()
+
+func show_howto() -> void:
+    settings_return = current_page
+    current_page = "howto"
+    overlay.show()
+    _clear()
+    _heading("OPERATOR TRAINING  //  HOW TO PLAY")
+    content.add_child(_label("GOAL: KEEP ALL THREE SYSTEMS ABOVE 0% INTEGRITY UNTIL THE SHIFT ENDS.", 16, CYAN))
+    content.add_child(_label("Allocate reactor units to LIFE SUPPORT, COOLING and COMMUNICATIONS. Match the displayed demands. Your reactor normally supplies six units.", 15))
+    content.add_child(_label("Press B to connect the emergency battery. It can supply two extra units but will discharge. Free reactor units to recharge it.", 15))
+    content.add_child(_label("Shifts 1–2: practice allocation. Shifts 3–4: tripped circuit breakers; wait three seconds and reset with 1, 2 or 3.", 15))
+    content.add_child(_label("Shifts 5–6: temporary reactor derating. Shift 7 onward: maintain the AUX STABILISER using T when available.", 15))
+    content.add_child(_label("C acknowledges an alarm but does not fix the problem. Esc pauses the game; you can save your campaign in three slots.", 15))
+    _button("BACK", _info_back)
+
+func show_credits() -> void:
+    settings_return = current_page
+    current_page = "credits"
+    overlay.show()
+    _clear()
+    _heading("CREDITS  //  GAME OFF 2026")
+    content.add_child(_label("NIGHT SHIFT: STATION ZERO", 19, CYAN))
+    content.add_child(_label("Game creator / repository: JIGSAW-HJH", 16))
+    content.add_child(_label("Engine: Godot 4.6 (Godot Engine contributors)", 15, MUTED))
+    content.add_child(_label("Programming, interface design and testing: Developed with AI assistance (OpenAI ChatGPT); human-directed gameplay and testing.", 15))
+    content.add_child(_label("Game source code: MIT. Original game assets and creative content: All rights reserved. See the repository license files.", 15))
+    content.add_child(_label("All in-game audio is generated programmatically; no third-party music files are included.", 15))
+    _button("BACK", _info_back)
+
+func _info_back() -> void:
+    if settings_return == "pause":
+        show_pause()
+    elif settings_return == "result":
+        show_result(result_won, "SHIFT COMPLETE" if result_won else "STATION LOST")
+    else:
+        show_title()
 
 func show_settings() -> void:
     if current_page != "settings":
@@ -251,6 +449,8 @@ func _reset_keys() -> void:
 func _settings_back() -> void:
     if settings_return == "pause":
         show_pause()
+    elif settings_return == "result":
+        show_result(result_won, "SHIFT COMPLETE" if result_won else "STATION LOST")
     else:
         show_title()
 
@@ -331,55 +531,12 @@ func _save_settings() -> void:
 
 func _new_game_request() -> void:
     if in_session and not game.finished:
-        _confirm("Discard Current Shift?", "Unsaved progress will be lost. Start a new shift?", _start_new)
+        _confirm("Start New Campaign?", "Current unsaved progress will be lost. Start at Shift 1?", _start_new)
     else:
         _start_new()
 
 func _start_new() -> void:
-    game._reset()
-    in_session = true
-    resume_game()
-
-func _save_game() -> void:
-    if game.finished:
-        status_message = "Completed or failed shifts cannot be saved."
-        show_pause()
-        return
-    var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-    if file == null:
-        status_message = "Save failed: could not open local save file."
-        show_pause()
-        return
-    file.store_string(JSON.stringify(game.get_save_data(), "\t"))
-    file.close()
-    status_message = "Shift saved to the local save slot."
-    show_pause()
-
-func _load_request() -> void:
-    if in_session and not game.finished:
-        _confirm("Load Saved Shift?", "Replace your current unsaved progress?", _continue_game)
-    else:
-        _continue_game()
-
-func _continue_game() -> void:
-    if not FileAccess.file_exists(SAVE_PATH):
-        status_message = "No saved shift found."
-        show_title()
-        return
-    var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
-    if file == null:
-        status_message = "Could not open the save."
-        show_title()
-        return
-    var decoded: Variant = JSON.parse_string(file.get_as_text())
-    file.close()
-    if typeof(decoded) != TYPE_DICTIONARY or not game.load_save_data(decoded):
-        status_message = "Invalid or unsupported save file."
-        if in_session:
-            show_pause()
-        else:
-            show_title()
-        return
+    game.start_campaign()
     in_session = true
     resume_game()
 
@@ -387,6 +544,8 @@ func _return_to_title() -> void:
     show_title()
 
 func resume_game() -> void:
+    if game.finished:
+        return
     overlay.hide()
     current_page = "game"
     game._refresh()
