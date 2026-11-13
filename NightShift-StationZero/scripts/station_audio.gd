@@ -86,7 +86,7 @@ func _tone(frequency: float, seconds: float, amplitude: float, shape: String) ->
             wave = 0.75 * sin(phase) + 0.25 * sin(phase * 2.0)
         var edge := 1.0
         if shape != "hum":
-            edge = minf(1.0, t / 0.008, (seconds - t) / 0.025)
+            edge = minf(1.0, minf(t / 0.008, (seconds - t) / 0.025))
         var value := int(clampf(wave * amplitude * edge, -1.0, 1.0) * 32767.0)
         if value < 0:
             value += 65536
