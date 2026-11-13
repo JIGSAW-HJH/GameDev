@@ -23,6 +23,7 @@ var game
 var overlay: ColorRect
 var content: VBoxContainer
 var current_page := "title"
+var settings_return := "title"
 var in_session := false
 var waiting_for_key := ""
 var bindings: Dictionary = {}
@@ -92,6 +93,7 @@ func _input(event: InputEvent) -> void:
         for action in ACTIONS:
             if action != waiting_for_key and int(bindings.get(action, 0)) == chosen:
                 status_message = "Key already assigned to %s. Choose another key." % ACTION_LABELS[ACTIONS.find(action)]
+                waiting_for_key = ""
                 show_settings()
                 return
         bindings[waiting_for_key] = chosen
@@ -102,10 +104,7 @@ func _input(event: InputEvent) -> void:
     if key_event.keycode == KEY_ESCAPE:
         get_viewport().set_input_as_handled()
         if current_page == "settings":
-            if in_session:
-                show_pause()
-            else:
-                show_title()
+            _settings_back()
         elif in_session and overlay.visible:
             resume_game()
         elif in_session:
@@ -180,6 +179,8 @@ func show_pause() -> void:
     _notice()
 
 func show_settings() -> void:
+    if current_page != "settings":
+        settings_return = current_page
     current_page = "settings"
     overlay.show()
     _clear()
@@ -248,7 +249,7 @@ func _reset_keys() -> void:
     show_settings()
 
 func _settings_back() -> void:
-    if in_session:
+    if settings_return == "pause":
         show_pause()
     else:
         show_title()
