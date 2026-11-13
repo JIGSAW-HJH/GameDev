@@ -2,7 +2,7 @@
 
 **GitHub Game Off 2026** — theme **SHIFT**. Single-screen science-fiction engineering survival game built using **Godot 4.6**.
 
-**Current candidate: V0.9 — Life Support & Atmosphere** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
+**Current candidate: V1.0 — Advanced Emergency Operations** (not yet playtested in the Godot editor). Previous V0.6 was tested successfully.
 
 ## Running
 
@@ -19,7 +19,8 @@
 | 5–6 | Temporary reduction in reactor output | 120 s |
 | 7–8 | Auxiliary stabiliser maintenance | 135–150 s |
 | 9–10 | Reactor thermal gauges, pump OFF/AUTO/BOOST; pump faults from Shift 10 | 165–180 s |
-| 11+ | Oxygen generation and pressure; cabin leaks from Shift 12 | 195–240 s |
+| 11–12 | Oxygen generation and pressure; cabin leaks from Shift 12 | 195–210 s |
+| 13+ | Concurrent incident containment: coolant ruptures, pressure breaches and communications arcs | 225–240 s |
 
 Events become gradually more frequent, though the balanced V0.3.1 battery, recovery and integrity-damage rates are retained. This is an arcade simulation, not a real electrical model.
 
@@ -42,6 +43,12 @@ At Shift 11, oxygen reserves and cabin pressure become active. The **G** key cyc
 Warnings occur at oxygen 50% / pressure 80 kPa, with critical alerts at 25% / 65 kPa; a shift fails if oxygen reaches 0% or pressure reaches 50 kPa. All rates and thresholds are fictional game-balance values, not crew-life-support engineering specifications.
 
 Saves now include oxygen, pressure, generator mode and leak/seal cooldown timers (save schema V4). Existing V1–V3 saves remain readable.
+
+## Advanced emergency operations (V1.0)
+
+Beginning at **Shift 13**, every fourth event triggers a compound incident while normal breaker, pump, reactor and life-support faults continue. One incident is active at a time for up to 18 seconds. Coolant ruptures increase reactor heating, hull breaches drain cabin pressure, and communications bus arcs wear communications integrity. Press **J** or the **CONTAIN** button to isolate the incident immediately. The containment control has a 10-second cooldown, and the end-of-shift results report **incidents contained / incidents generated**. Incidents subside on their own after 18 seconds if uncontained, but can still cause equipment damage in the meantime. All rates are intentionally arcade-balanced.
+
+Save format V5 includes incident type, remaining duration, containment cooldown and incident statistics; V1–V4 saved games remain readable. The existing three save slots and settings are unchanged. This version does not add GitHub Actions or automated builds.
 
 ## Menu and saves
 
@@ -66,6 +73,7 @@ The key mapping and audio volume preferences are saved independently using Godot
 | P | Cycle cooling pump OFF / AUTO / BOOST (Shift 9+) |
 | G | Cycle oxygen generator OFF / AUTO / BOOST (Shift 11+) |
 | H | Seal a cabin pressure leak (Shift 12+) |
+| J | Contain a compound emergency incident (Shift 13+) |
 | Esc | Pause / back |
 
 Key mappings can be changed in **Settings**. Esc is reserved.
@@ -81,4 +89,4 @@ Key mappings can be changed in **Settings**. Esc is reserved.
 
 ## Testing status
 
-V0.9 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
+V1.0 was committed to GitHub but **has not been verified inside Godot 4.6** here. The previously tested V0.6 should be retained as a local backup. Please test the first shift, Shift 3 breaker introduction, Shift 5 reactor sag, Shift 7 auxiliary maintenance, save-slot overwrite/loading, and full-screen pause navigation before distribution.
