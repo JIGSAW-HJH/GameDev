@@ -1,5 +1,5 @@
 extends CanvasLayer
-## V0.6: front-end, pause menu, persistent saves and settings.
+## V1.1: front-end with animated visual-only SCADA attract mode.
 signal menu_closed
 const SAVE_PATH := "user://station_zero_save.json" # Legacy V0.6 save, still readable
 const SAVE_PREFIX := "user://station_zero_slot_%d.json"
@@ -22,6 +22,8 @@ const PANEL := Color("#102335")
 const BORDER := Color("#28546a")
 var game
 var overlay: ColorRect
+var attract_background: Control
+var attract_dimmer: ColorRect
 var content: VBoxContainer
 var current_page := "title"
 var settings_return := "title"
@@ -48,14 +50,25 @@ func _ready() -> void:
     overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     overlay.mouse_filter = Control.MOUSE_FILTER_STOP
     add_child(overlay)
+    # Separate ambient visualisation: it NEVER advances gameplay or touches saves.
+    attract_background = Control.new()
+    attract_background.set_script(load("res://scripts/menu_scada_bg.gd"))
+    attract_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    attract_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    overlay.add_child(attract_background)
+    attract_dimmer = ColorRect.new()
+    attract_dimmer.color = Color(0.012, 0.025, 0.042, 0.57)
+    attract_dimmer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    attract_dimmer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    overlay.add_child(attract_dimmer)
     var center := CenterContainer.new()
     center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     overlay.add_child(center)
     var panel := PanelContainer.new()
     panel.custom_minimum_size = Vector2(700.0, 0.0)
     var style := StyleBoxFlat.new()
-    style.bg_color = PANEL
-    style.border_color = BORDER
+    style.bg_color = Color(0.035, 0.105, 0.16, 0.97)
+    style.border_color = Color("#397d90")
     style.set_border_width_all(2)
     style.set_corner_radius_all(12)
     style.set_content_margin_all(34)
@@ -74,6 +87,15 @@ func _ready() -> void:
     confirm_dialog.ok_button_text = "Confirm"
     add_child(confirm_dialog)
     show_title()
+
+func _set_background_mode(is_title_context: bool) -> void:
+    # Title/settings from title: ambient animated SCADA.
+    # Pause/results/settings from pause: the real frozen station remains behind
+    # a transparent dark tint, with no simulated station overlay.
+    attract_background.visible = is_title_context
+    attract_background.set_process(is_title_context)
+    attract_dimmer.visible = is_title_context
+    overlay.color = BG if is_title_context else Color(0.01, 0.02, 0.035, 0.89)
 
 func is_blocking() -> bool:
     return overlay.visible
@@ -163,6 +185,7 @@ func _notice() -> void:
 func show_title() -> void:
     current_page = "title"
     overlay.show()
+    _set_background_mode(true)
     _clear()
     _heading("GITHUB GAME OFF 2026  •  SHIFT")
     _button("NEW CAMPAIGN", _new_game_request)
@@ -182,6 +205,7 @@ func show_pause() -> void:
         return
     current_page = "pause"
     overlay.show()
+    _set_background_mode(false)
     game.station_audio.set_alarm(false)
     _clear()
     _heading("SHIFT %02d PAUSED  //  OPERATIONS SUSPENDED" % game.shift_number)
@@ -200,6 +224,7 @@ func show_result(won: bool, reason: String) -> void:
     in_session = true
     current_page = "result"
     overlay.show()
+    _set_background_mode(false)
     game.station_audio.set_alarm(false)
     _clear()
     _heading("SHIFT %02d  /  %s" % [game.shift_number, "COMPLETE" if won else "STATION LOST"])
@@ -560,6 +585,7 @@ func _return_to_title() -> void:
 func resume_game() -> void:
     if game.finished:
         return
+    attract_background.set_process(false)
     overlay.hide()
     current_page = "game"
     game._refresh()
