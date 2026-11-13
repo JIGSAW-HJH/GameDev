@@ -79,6 +79,14 @@ var maintenance_label: Label
 var maintenance_button: Button
 var shift_label: Label
 var total_faults: int = 0
+var reactor_temp_c: float = 62.0
+var cooling_pump_mode: int = 1 # 0 OFF, 1 AUTO, 2 BOOST
+var cooling_pump_fault_seconds: float = 0.0
+var temperature_label: Label
+var temperature_bar: ProgressBar
+var cooling_pump_button: Button
+var cooling_tip_label: Label
+var temp_alert_state: int = 0
 
 func _ready() -> void:
     rng.randomize()
@@ -107,6 +115,11 @@ func _process(delta: float) -> void:
         maintenance_integrity = maxf(0.0, maintenance_integrity - delta * (0.85 + float(shift_number - 7) * 0.07))
         if maintenance_integrity <= 0.0:
             _finish(false, "AUXILIARY STABILISER FAILED.")
+            _refresh()
+            return
+    if shift_number >= 9:
+        _update_thermal(delta)
+        if finished:
             _refresh()
             return
     event_timer -= delta
@@ -170,6 +183,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
         "breaker_3": _reset_breaker(2)
         "mute": _toggle_audio()
         "service": _service_auxiliary()
+        "pump": _cycle_cooling_pump()
 
 func _total_power() -> int:
     var result := 0
@@ -215,6 +229,9 @@ func _trigger_event() -> void:
     # Alternating events keep faults recoverable and preserve a clear power puzzle.
     if shift_number >= 3 and event_count % 2 == 0 and not breakers_tripped.has(true):
         _trip_breaker(stressed)
+    if shift_number >= 10 and event_count % 4 == 0:
+        cooling_pump_fault_seconds = 8.0
+        _add_log("FAULT: COOLING PUMP TEMPORARILY OFFLINE FOR 8 SECONDS.")
     if shift_number >= 5 and event_count % 3 == 0:
         reactor_output = 5
         sag_timer = REACTOR_SAG_SECONDS
@@ -271,6 +288,10 @@ func _reset() -> void:
     event_count = 0
     log_lines.clear()
     total_faults = 0
+    reactor_temp_c = 62.0
+    cooling_pump_mode = 1
+    cooling_pump_fault_seconds = 0.0
+    temp_alert_state = 0
     maintenance_integrity = 100.0
     maintenance_cooldown = 0.0
     breakers_tripped = [false, false, false]
@@ -339,6 +360,16 @@ func _refresh() -> void:
         maintenance_label.add_theme_color_override("font_color", RED if shift_number >= 7 and maintenance_integrity < 35.0 else CYAN)
     if maintenance_button != null:
         maintenance_button.disabled = shift_number < 7 or maintenance_cooldown > 0.0 or finished
+    if temperature_label != null:
+        temperature_label.text = "REACTOR CORE  %.1f°C  /  %s" % [reactor_temp_c, _thermal_status()] if shift_number >= 9 else "REACTOR THERMAL CONTROLS  /  UNLOCK SHIFT 09"
+        temperature_label.add_theme_color_override("font_color", RED if reactor_temp_c >= 105.0 and shift_number >= 9 else (AMBER if reactor_temp_c >= 85.0 and shift_number >= 9 else CYAN))
+    if temperature_bar != null:
+        temperature_bar.value = reactor_temp_c
+    if cooling_pump_button != null:
+        cooling_pump_button.text = "PUMP: %s [P]" % _pump_mode_name() if shift_number >= 9 else "PUMP LOCKED"
+        cooling_pump_button.disabled = finished or shift_number < 9
+    if cooling_tip_label != null:
+        cooling_tip_label.text = "TEMP WARNING 85°C  /  CRITICAL 105°C  /  SHUTDOWN 130°C" if shift_number >= 9 else "AUTO / BOOST COOLING CONTROL UNLOCKS AT SHIFT 09"
     var allocated: int = _total_power()
     var capacity: int = _available_capacity()
     budget_label.text = "%d / %d UNITS ASSIGNED    •    %d FREE" % [allocated, capacity, maxi(0, capacity - allocated)]
@@ -358,7 +389,13 @@ func _refresh() -> void:
         bus_diagram.set("brownout", allocated > capacity)
         bus_diagram.set("breakers_tripped", breakers_tripped.duplicate())
     var warning := ""
-    if shift_number >= 7 and maintenance_integrity < 35.0:
+    if shift_number >= 9 and reactor_temp_c >= 105.0:
+        warning = "REACTOR TEMPERATURE CRITICAL"
+    elif shift_number >= 9 and reactor_temp_c >= 85.0:
+        warning = "REACTOR TEMPERATURE HIGH"
+    elif shift_number >= 9 and cooling_pump_fault_seconds > 0.0:
+        warning = "COOLING PUMP OFFLINE"
+    elif shift_number >= 7 and maintenance_integrity < 35.0:
         warning = "AUXILIARY MAINTENANCE REQUIRED"
     elif breakers_tripped.has(true):
         warning = "CIRCUIT BREAKER TRIPPED"
@@ -581,6 +618,23 @@ func _build_ui() -> void:
     maintenance_button.pressed.connect(_service_auxiliary)
     aux_row.add_child(maintenance_button)
 
+    var thermal_panel := _panel(true)
+    root.add_child(thermal_panel)
+    var thermal_stack := _vbox(5)
+    thermal_panel.add_child(thermal_stack)
+    var thermal_row := _hbox(12)
+    thermal_stack.add_child(thermal_row)
+    temperature_label = _label("REACTOR THERMAL CONTROLS  /  UNLOCK SHIFT 09", 14, CYAN)
+    temperature_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    thermal_row.add_child(temperature_label)
+    cooling_pump_button = _button("PUMP LOCKED")
+    cooling_pump_button.pressed.connect(_cycle_cooling_pump)
+    thermal_row.add_child(cooling_pump_button)
+    temperature_bar = _bar(130.0, reactor_temp_c)
+    thermal_stack.add_child(temperature_bar)
+    cooling_tip_label = _label("AUTO / BOOST COOLING CONTROL UNLOCKS AT SHIFT 09", 11, MUTED)
+    thermal_stack.add_child(cooling_tip_label)
+
     var systems_row := _hbox(12)
     systems_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
     root.add_child(systems_row)
@@ -676,7 +730,10 @@ func _toggle_audio() -> void:
 
 func get_save_data() -> Dictionary:
     return {
-        "version": 2,
+        "version": 3,
+        "reactor_temp_c": reactor_temp_c,
+        "cooling_pump_mode": cooling_pump_mode,
+        "cooling_pump_fault_seconds": cooling_pump_fault_seconds,
         "shift_number": shift_number,
         "shift_duration": shift_duration,
         "maintenance_integrity": maintenance_integrity,
@@ -700,7 +757,7 @@ func get_save_data() -> Dictionary:
     }
 
 func load_save_data(data: Dictionary) -> bool:
-    if int(data.get("version", -1)) not in [1, 2]:
+    if int(data.get("version", -1)) not in [1, 2, 3]:
         return false
     for name in ["power", "demand", "integrity", "breakers_tripped", "breaker_cooldowns", "log_lines"]:
         if not data.has(name) or typeof(data[name]) != TYPE_ARRAY:
@@ -713,6 +770,10 @@ func load_save_data(data: Dictionary) -> bool:
     maintenance_integrity = clampf(float(data.get("maintenance_integrity", 100.0)), 0.0, 100.0)
     maintenance_cooldown = clampf(float(data.get("maintenance_cooldown", 0.0)), 0.0, 30.0)
     total_faults = maxi(0, int(data.get("total_faults", 0)))
+    reactor_temp_c = clampf(float(data.get("reactor_temp_c", 62.0)), 0.0, 130.0)
+    cooling_pump_mode = clampi(int(data.get("cooling_pump_mode", 1)), 0, 2)
+    cooling_pump_fault_seconds = clampf(float(data.get("cooling_pump_fault_seconds", 0.0)), 0.0, 8.0)
+    temp_alert_state = 0
     remaining = clampf(float(data.get("remaining", shift_duration)), 0.1, shift_duration)
     event_timer = clampf(float(data.get("event_timer", get_event_interval())), 0.1, get_event_interval())
     reactor_output = clampi(int(data.get("reactor_output", REACTOR_NOMINAL)), 1, REACTOR_NOMINAL)
@@ -772,7 +833,9 @@ func get_shift_phase() -> String:
         return "BREAKER OPERATIONS"
     if shift_number <= 6:
         return "REACTOR STABILITY"
-    return "AUXILIARY OPERATIONS"
+    if shift_number <= 8:
+        return "AUXILIARY OPERATIONS"
+    return "THERMAL OPERATIONS"
 
 func start_campaign() -> void:
     shift_number = 1
@@ -793,3 +856,59 @@ func _service_auxiliary() -> void:
     station_audio.effect("success")
     _add_log("AUXILIARY STABILISER SERVICED. INTEGRITY RECOVERED.")
     _refresh()
+
+func _pump_mode_name() -> String:
+    match cooling_pump_mode:
+        0: return "OFF"
+        1: return "AUTO"
+        _: return "BOOST"
+
+func _thermal_status() -> String:
+    if cooling_pump_fault_seconds > 0.0:
+        return "PUMP FAULT"
+    if reactor_temp_c >= 105.0:
+        return "CRITICAL"
+    if reactor_temp_c >= 85.0:
+        return "WARNING"
+    return "NORMAL"
+
+func _cycle_cooling_pump() -> void:
+    if shift_number < 9 or finished or (game_menu != null and game_menu.is_blocking()):
+        return
+    cooling_pump_mode = (cooling_pump_mode + 1) % 3
+    station_audio.effect("click")
+    _add_log("COOLING PUMP CONTROL SET TO %s." % _pump_mode_name())
+    _refresh()
+
+func _update_thermal(delta: float) -> void:
+    if cooling_pump_fault_seconds > 0.0:
+        cooling_pump_fault_seconds = maxf(0.0, cooling_pump_fault_seconds - delta)
+        if cooling_pump_fault_seconds <= 0.0:
+            _add_log("COOLING PUMP FAULT CLEARED; CONTROL RESTORED.")
+    var powered: bool = not breakers_tripped[1] and power[1] >= demand[1]
+    var cooling_rate: float = 0.0
+    if powered and cooling_pump_fault_seconds <= 0.0:
+        if cooling_pump_mode == 1:
+            cooling_rate = 0.68
+        elif cooling_pump_mode == 2:
+            cooling_rate = 1.4
+    # These are gameplay tuning rates, not thermodynamic calculations.
+    var heat_rate: float = 0.50 + float(maxi(0, 6 - reactor_output)) * 0.12
+    if not powered:
+        heat_rate += 0.12
+    reactor_temp_c = clampf(reactor_temp_c + (heat_rate - cooling_rate) * delta, 35.0, 130.0)
+    var new_alert := 0
+    if reactor_temp_c >= 105.0:
+        new_alert = 2
+    elif reactor_temp_c >= 85.0:
+        new_alert = 1
+    if new_alert != temp_alert_state:
+        temp_alert_state = new_alert
+        if new_alert == 2:
+            _add_log("CRITICAL: REACTOR CORE ABOVE 105°C! RESTORE COOLING.")
+        elif new_alert == 1:
+            _add_log("WARNING: REACTOR CORE ABOVE 85°C.")
+        else:
+            _add_log("REACTOR TEMPERATURE RETURNED TO NORMAL RANGE.")
+    if reactor_temp_c >= 130.0:
+        _finish(false, "REACTOR OVERHEAT SHUTDOWN.")
